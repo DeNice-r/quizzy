@@ -1,17 +1,16 @@
 from cfg import *
-from models import *
-from utils import *
+from db.models import *
 
 # Telegram API
 from telegram import Update
-from telegram.ext import MessageHandler, CommandHandler, Filters, CallbackContext, ConversationHandler
+from telegram.ext import CommandHandler, CallbackContext
 
 # DB API
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm.attributes import flag_modified
+from db.engine import session
+
 
 # Misc.
-from random import choice
 
 
 def cmd_start(upd: Update, ctx: CallbackContext):

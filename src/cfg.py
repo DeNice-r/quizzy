@@ -7,11 +7,6 @@ from dotenv import load_dotenv
 # Telegram API
 from telegram.ext import Updater
 
-# DB API
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy_utils import database_exists, create_database
-
 # Misc
 import logging
 
@@ -22,15 +17,8 @@ logging.basicConfig(format='[%(asctime)s]=>%(levelname)s] %(name)s: %(message)s'
 
 bot_name = os.environ['BOT_NAME']
 
-# echo=True,
-db_engine = create_engine(os.environ['DATABASE_URL'],  # echo=True,
-                          future=True)
-session = sessionmaker(db_engine)
-if not database_exists(db_engine.url):
-    create_database(db_engine.url)
-
 # consts
-MAX_CATEGORY_NUMBER = 15
+MAX_CATEGORY_NUMBER = 10
 
 # re's
 _RAW_RE_SHORT_TEXT = r'[a-zа-яёіїєґ\-_,\.+=<>()*&^%#@!?\/\\\[\]1-9\'" ]{1,50}'

@@ -3,4 +3,3 @@ python-dotenv==0.20.0
 python-telegram-bot~=13.12
 alembic~=1.8.0
 psycopg-binary==3.0.14
-

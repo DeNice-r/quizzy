@@ -3,11 +3,9 @@ from bot import *
 
 # Telegram API
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import MessageHandler, CommandHandler, Filters, CallbackContext, ConversationHandler, \
-    CallbackQueryHandler
+from telegram.ext import CommandHandler, CallbackContext, ConversationHandler, CallbackQueryHandler
 
 # DB API
-from sqlalchemy.orm.attributes import flag_modified
 from db.engine import session
 
 # Misc.
@@ -15,10 +13,9 @@ from enum import Enum
 from random import shuffle
 
 
-# Константи бота
+# Константи діалогу
 class PQ(Enum):
-    START = 0
-    NEXT = 1
+    START, NEXT = range(2)
 
 
 def get_current_markup(user_id: int):
@@ -86,17 +83,13 @@ def session_to_attempt(user_id):
         s.flush()
         attempt_id = attempt.id
 
-        # TODO: Не переносить відповіді
         session_answers = s.query(SessionAnswer).filter_by(session_id=quiz_session.id).all()
         attempt_answers = []
         for ans in session_answers:
             attempt_answers.append(AttemptAnswer.from_session_answer(ans))
         s.add_all(attempt_answers)
 
-        quiz_session_id = quiz_session.id
-
-    with session.begin() as s:
-        s.query(Session).filter_by(id=quiz_session_id).delete()
+        s.query(Session).filter_by(id=quiz_session.id).delete()
     return attempt_id
 
 

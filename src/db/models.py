@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import Column, SmallInteger, Integer, BigInteger, Boolean, String, DateTime, ForeignKey, JSON,\
     UniqueConstraint
@@ -21,11 +21,6 @@ class User(BaseModel):
 
     id = Column(BigInteger, autoincrement=False, primary_key=True)
     data = Column(JSON, default={})
-    # quizzes = relationship("Quiz", cascade='all, delete, delete-orphan', passive_deletes=True)
-    # session = relationship("Session", cascade='all, delete, delete-orphan', passive_deletes=True)
-    # attempts = relationship("Attempt", cascade='all', passive_deletes=True)
-    # groups = relationship("Group", cascade='all, delete, delete-orphan', passive_deletes=True)
-    # member_of_groups = relationship("GroupMember", cascade='all, delete, delete-orphan', passive_deletes=True)
 
     def flag_data(self):
         flag_modified(self, 'data')
@@ -55,11 +50,6 @@ class Quiz(BaseModel):
     name = Column(String(50), nullable=False)
     author_id = Column(Integer, ForeignKey(User.id, ondelete='CASCADE'), nullable=False)
     is_public = Column(Boolean, default=True, nullable=False)
-    # token = relationship("QuizToken", cascade='all, delete, delete-orphan', passive_deletes=True)
-    # categories = relationship("QuizCategory", cascade='all, delete, delete-orphan', passive_deletes=True)
-    # questions = relationship("QuizQuestion", cascade='all, delete, delete-orphan', passive_deletes=True)
-    # sessions = relationship("Session", cascade='all, delete, delete-orphan', passive_deletes=True)
-    # attempts = relationship("Attempt", cascade='all, delete, delete-orphan', passive_deletes=True)
 
 
 class QuizToken(BaseModel):
@@ -84,7 +74,6 @@ class QuizCategoryType(BaseModel):
 
     id = Column(SmallInteger, primary_key=True)
     name = Column(String(50), nullable=False, unique=True)
-    # quizzes = relationship("QuizCategory", cascade='all, delete, delete-orphan', passive_deletes=True)
 
 
 class QuizCategory(BaseModel):
@@ -112,9 +101,6 @@ class QuizQuestion(BaseModel):
     quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
     question = Column(String(256), nullable=False)
     multi = Column(Boolean, default=False, nullable=False)
-    # answers = relationship("QuestionAnswer", cascade='all, delete, delete-orphan', passive_deletes=True)
-    # session_answers = relationship("SessionAnswer", cascade='all, delete, delete-orphan', passive_deletes=True)
-    # attempt_answers = relationship("AttemptAnswer", cascade='all, delete, delete-orphan', passive_deletes=True)
 
 
 class QuestionAnswer(BaseModel):
@@ -129,8 +115,6 @@ class QuestionAnswer(BaseModel):
     question_id = Column(Integer, ForeignKey(QuizQuestion.id, ondelete='CASCADE'), nullable=False)
     answer = Column(String(256), nullable=False)
     is_right = Column(Boolean, default=False, nullable=False)
-    # session_answers = relationship("SessionAnswer", cascade='all, delete, delete-orphan', passive_deletes=True)
-    # attempt_answers = relationship("AttemptAnswer", cascade='all, delete, delete-orphan', passive_deletes=True)
 
 
 class Session(BaseModel):
@@ -145,7 +129,6 @@ class Session(BaseModel):
     quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
     started_on = Column(DateTime, default=datetime.datetime.now, nullable=False)
     question_number = Column(Integer, default=0, nullable=False)
-    # answers = relationship("SessionAnswer", cascade='all, delete, delete-orphan', passive_deletes=True)
 
 
 class SessionAnswer(BaseModel):
@@ -154,7 +137,6 @@ class SessionAnswer(BaseModel):
     def __init__(self, session_id, question_id, answer_ids: list):
         self.session_id = session_id
         self.question_id = question_id
-        # TODO: чомусь не зберігаються айді
         self.answer_ids = answer_ids.copy()
 
     id = Column(BigInteger, primary_key=True)
@@ -172,15 +154,14 @@ class Attempt(BaseModel):
         self.started_on = started_on
 
     @classmethod
-    def from_session(cls, session: Session):
-        return cls(session.user_id, session.quiz_id, session.started_on)
+    def from_session(cls, quiz_session: Session):
+        return cls(quiz_session.user_id, quiz_session.quiz_id, quiz_session.started_on)
 
     id = Column(BigInteger, primary_key=True)
     user_id = Column(BigInteger, ForeignKey(User.id, ondelete='SET NULL'), nullable=True)
     quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
     started_on = Column(DateTime, nullable=False)
     finished_on = Column(DateTime, default=datetime.datetime.now, nullable=False)
-    # answers = relationship("AttemptAnswer", cascade='all, delete, delete-orphan', passive_deletes=True)
 
 
 class AttemptAnswer(BaseModel):
@@ -193,7 +174,7 @@ class AttemptAnswer(BaseModel):
 
     @classmethod
     def from_session_answer(cls, session_answer: SessionAnswer):
-        return cls(session_answer.session_id, session_answer.question_id, session_answer.answer_ids)
+        return cls(session_answer.session_id, session_answer.question_id, tuple(session_answer.answer_ids))  # !!!!!!!!!!
 
     def __repr__(self):
         return f'Id: {self.id}, attempt_id: {self.attempt_id}, question_id: {self.question_id}, ' \
@@ -212,7 +193,6 @@ class Group(BaseModel):
     owner_id = Column(Integer, ForeignKey(User.id, ondelete='CASCADE'), nullable=False)
     name = Column(String(50), nullable=False)
     description = Column(String(500))
-    # members = relationship("GroupMember", cascade='all, delete, delete-orphan', passive_deletes=True)
 
 
 class GroupMember(BaseModel):

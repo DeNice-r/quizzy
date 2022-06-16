@@ -7,7 +7,7 @@ from telegram.ext import MessageHandler, CommandHandler, Filters, CallbackContex
     CallbackQueryHandler
 
 # DB API
-from db.engine import session
+from db.engine import db_session
 
 # Misc.
 from random import choice
@@ -15,6 +15,15 @@ from enum import Enum
 
 
 # Константи бота
+from db.models.QuestionAnswer import QuestionAnswer
+from db.models.Quiz import Quiz
+from db.models.QuizCategory import QuizCategory
+from db.models.QuizCategoryType import QuizCategoryType
+from db.models.QuizQuestion import QuizQuestion
+from db.models.QuizToken import QuizToken
+from db.models.User import User
+
+
 class NQ(Enum):
     NAME, NEW_CATEGORY, QUE, QUE_ANS, QUE_ANS_RIGHT = range(5)
 
@@ -28,7 +37,7 @@ def privacy_or_multi_callback(upd: Update, ctx: CallbackContext):
         query.edit_message_reply_markup(
             InlineKeyboardMarkup([[InlineKeyboardButton(('Публічне' if action else 'Приватне') + ' опитування',
                                    callback_data='privacy.' + str(not action))]]))
-        with session.begin() as s:
+        with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
             user.data['new_quiz']['privacy'] = action
             user.flag_data()
@@ -36,7 +45,7 @@ def privacy_or_multi_callback(upd: Update, ctx: CallbackContext):
         query.edit_message_reply_markup(
             InlineKeyboardMarkup([[InlineKeyboardButton(('Кілька відповідей' if action else 'Одна відповідь'),
                                    callback_data='multi.' + str(not action))]]))
-        with session.begin() as s:
+        with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
             user.data['new_quiz']['questions'][-1]['multi'] = action
             user.flag_data()
@@ -44,7 +53,7 @@ def privacy_or_multi_callback(upd: Update, ctx: CallbackContext):
 
 
 def cmd_new_quiz(upd: Update, ctx: CallbackContext):
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
 
         # Можливість продовжити створення?
@@ -70,7 +79,7 @@ def cmd_remove_quiz(upd: Update, ctx: CallbackContext):
                                                                  'його код:\n/pass Abc123dEF4')
         return
 
-    with session.begin() as s:
+    with db_session.begin() as s:
         quiz_token = s.query(QuizToken).filter_by(token=split[1]).one_or_none()
         if quiz_token is None:
             ctx.bot.send_message(chat_id=upd.effective_chat.id,
@@ -97,7 +106,7 @@ def conv_nq_name(upd: Update, ctx: CallbackContext):
                              text='2. Тепер, вводьте категорії цього опитування по одній. Щоб завершити введення '
                                   'категорій та продовжити створення опитування, введіть /done. Ви можете переглянути '
                                   'додані категорії за допомогою команди /show.')
-        with session.begin() as s:
+        with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
             user.data['new_quiz']['name'] = name
             user.flag_data()
@@ -111,7 +120,7 @@ def conv_nq_name(upd: Update, ctx: CallbackContext):
 def conv_nq_cat(upd: Update, ctx: CallbackContext):
     cat_name = upd.message.text
     if RE_SHORT_TEXT.fullmatch(cat_name):
-        with session.begin() as s:
+        with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
             cat_ref = user.data['new_quiz']['categories']
             cat = s.query(QuizCategoryType).filter_by(name=cat_name).one_or_none()
@@ -154,7 +163,7 @@ def conv_nq_cat(upd: Update, ctx: CallbackContext):
 
 def get_cat_markup(user_id, cat_id_to_remove=None):
     keyboard = []
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, user_id)
         cats = user.data['new_quiz']['categories']
         if cat_id_to_remove is not None:
@@ -179,7 +188,7 @@ def rem_cat_callback(upd: Update, ctx: CallbackContext):
 
 
 def conv_nq_cat_done(upd: Update, ctx: CallbackContext):
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
         cats = user.data['new_quiz']['categories']
         res = ''
@@ -192,7 +201,7 @@ def conv_nq_cat_done(upd: Update, ctx: CallbackContext):
 
 def conv_nq_que(upd: Update, ctx: CallbackContext):
     if RE_MED_TEXT.fullmatch(upd.message.text):
-        with session.begin() as s:
+        with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
             user.data['new_quiz']['questions'].append({
                 'question': upd.message.text,
@@ -217,7 +226,7 @@ def conv_nq_que(upd: Update, ctx: CallbackContext):
 
 def conv_nq_que_right_ans(upd: Update, ctx: CallbackContext):
     if RE_MED_TEXT.fullmatch(upd.message.text):
-        with session.begin() as s:
+        with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
             user.data['new_quiz']['questions'][-1]['right_answers'].append(upd.message.text)
             user.flag_data()
@@ -231,7 +240,7 @@ def conv_nq_que_right_ans(upd: Update, ctx: CallbackContext):
 
 
 def conv_nq_que_right_ans_done(upd: Update, ctx: CallbackContext):
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
         cur_que_ref = user.data['new_quiz']['questions'][-1]
         if len(cur_que_ref['right_answers']) < 1:
@@ -244,7 +253,7 @@ def conv_nq_que_right_ans_done(upd: Update, ctx: CallbackContext):
 
 def conv_nq_que_ans(upd: Update, ctx: CallbackContext):
     if RE_MED_TEXT.fullmatch(upd.message.text):
-        with session.begin() as s:
+        with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
             user.data['new_quiz']['questions'][-1]['wrong_answers'].append(upd.message.text)
             user.flag_data()
@@ -258,7 +267,7 @@ def conv_nq_que_ans(upd: Update, ctx: CallbackContext):
 
 
 def conv_nq_que_done(upd: Update, ctx: CallbackContext):
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
         cur_que_ref = user.data['new_quiz']['questions'][-1]
         if (len(cur_que_ref['right_answers']) + len(cur_que_ref['right_answers'])) < 2:
@@ -274,7 +283,7 @@ def conv_nq_que_done(upd: Update, ctx: CallbackContext):
 
 
 def conv_nq_success_end(upd: Update, ctx: CallbackContext):
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
 
         quiz_ref = user.data['new_quiz']
@@ -291,7 +300,7 @@ def conv_nq_success_end(upd: Update, ctx: CallbackContext):
             s.add(kitten)
 
         for que in que_ref:
-            question = QuizQuestion(quiz.id, que['question'], user.data['new_quiz']['multi'])
+            question = QuizQuestion(quiz.id, que['question'], que['multi'])
             s.add(question)
             s.flush()
 
@@ -316,7 +325,7 @@ def conv_nq_success_end(upd: Update, ctx: CallbackContext):
 
 def conv_nq_cancel(upd: Update, ctx: CallbackContext):
     """ Видаляє всі згадки про це опитування. """
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
         del user.data['new_quiz']
         user.flag_data()

@@ -1,5 +1,5 @@
 from cfg import *
-from db.models import *
+from db.models.User import User
 
 # Telegram API
 from telegram import Update
@@ -7,7 +7,7 @@ from telegram.ext import CommandHandler, CallbackContext
 
 # DB API
 from sqlalchemy.exc import IntegrityError
-from db.engine import session
+from db.engine import db_session
 
 
 # Misc.
@@ -21,7 +21,7 @@ def cmd_start(upd: Update, ctx: CallbackContext):
     msg = f'Ви успішно авторизувалися у {bot_name}.'
     new_user = User(upd.effective_user.id)
     try:
-        with session.begin() as s:
+        with db_session.begin() as s:
             s.add(new_user)
     except IntegrityError as e:
         msg = f'Ви вже авторизовані у {bot_name}!'

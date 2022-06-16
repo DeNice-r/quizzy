@@ -3,16 +3,16 @@ from bot import *
 
 # Telegram API
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import MessageHandler, CommandHandler, Filters, CallbackContext, ConversationHandler, \
+from telegram.ext import CommandHandler, CallbackContext, ConversationHandler, \
     CallbackQueryHandler
 
 # DB API
-from sqlalchemy.orm.attributes import flag_modified
-from db.engine import session
+from db.engine import db_session
 
 # Misc.
 from enum import Enum
-from random import shuffle
+
+from db.models.Quiz import Quiz
 
 
 class MQ(Enum):
@@ -20,7 +20,7 @@ class MQ(Enum):
 
 
 def cmd_my_quizzes(upd: Update, ctx: CallbackContext):
-    with session.begin() as s:
+    with db_session.begin() as s:
         quizzes = s.query(Quiz).filter_by(author_id=upd.effective_user.id).all()
         keyboard = []
         for q_idx in range(0, len(quizzes), 2):
@@ -39,10 +39,9 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
     query = upd.callback_query
     query.answer()
     action = int(query.data)
-    with session.begin() as s:
+    with db_session.begin() as s:
 
         print(s.get(Quiz, action).name)
-
 
 
 dispatcher.add_handler(ConversationHandler(

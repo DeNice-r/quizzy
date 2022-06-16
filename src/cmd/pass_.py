@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, CallbackContext, ConversationHandler, CallbackQueryHandler
 
 # DB API
-from db.engine import session
+from db.engine import db_session
 
 # Misc.
 from enum import Enum
@@ -14,12 +14,23 @@ from random import shuffle
 
 
 # Константи діалогу
+from db.models.Attempt import Attempt
+from db.models.AttemptAnswer import AttemptAnswer
+from db.models.QuestionAnswer import QuestionAnswer
+from db.models.Quiz import Quiz
+from db.models.QuizQuestion import QuizQuestion
+from db.models.QuizToken import QuizToken
+from db.models.Session import Session
+from db.models.SessionAnswer import SessionAnswer
+from db.models.User import User
+
+
 class PQ(Enum):
     START, NEXT = range(2)
 
 
 def get_current_markup(user_id: int):
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, user_id)
         answers = s.query(QuestionAnswer).filter_by(question_id=user.data['pass']['question_id']).all()
 
@@ -42,7 +53,7 @@ def get_current_markup(user_id: int):
 
 
 def send_next_question(chat_id: int, user_id: int, send_message):
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, user_id)
         pass_ = user.data['pass']
         quiz_id = pass_['id']
@@ -76,7 +87,7 @@ def send_next_question(chat_id: int, user_id: int, send_message):
 
 
 def session_to_attempt(user_id):
-    with session.begin() as s:
+    with db_session.begin() as s:
         quiz_session = s.query(Session).filter_by(user_id=user_id).one()
         attempt = Attempt.from_session(quiz_session)
         s.add(attempt)
@@ -100,7 +111,7 @@ def cmd_pass(upd: Update, ctx: CallbackContext):
                                                                  '/pass Abc123dEF4')
         return
 
-    with session.begin() as s:
+    with db_session.begin() as s:
         quiz_token = s.query(QuizToken).filter_by(token=split[1]).one_or_none()
         if quiz_token is None:
             ctx.bot.send_message(chat_id=upd.effective_chat.id,
@@ -124,7 +135,7 @@ def cmd_pass(upd: Update, ctx: CallbackContext):
 
 
 def conv_pq_next_question(upd: Update, ctx: CallbackContext):
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
         quiz = s.get(Quiz, user.data['pass']['id'])
 
@@ -143,15 +154,14 @@ def answer_callback(upd: Update, ctx: CallbackContext):
     if action == -1:
         user_id = upd.effective_user.id
         if not send_next_question(upd.effective_chat.id, user_id, ctx.bot.send_message):
-            with session.begin() as s:
+            with db_session.begin() as s:
                 attempt = s.get(Attempt, session_to_attempt(user_id))
                 answers = s.query(AttemptAnswer).filter_by(attempt_id=attempt.id).all()
-                print(answers)
                 ctx.bot.send_message(chat_id=upd.effective_chat.id,
                                      text=f'Результати тестування: {attempt.finished_on - attempt.started_on}')
             return ConversationHandler.END
     else:
-        with session.begin() as s:
+        with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
             multi = user.data['pass']['multi']
             selection = user.data['pass']['selection']
@@ -167,7 +177,7 @@ def answer_callback(upd: Update, ctx: CallbackContext):
 
 def conv_pq_cancel(upd: Update, ctx: CallbackContext):
     session_to_attempt(upd.effective_user.id)
-    with session.begin() as s:
+    with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
         user.remove_data('pass_quiz')
     ctx.bot.send_message(chat_id=upd.effective_chat.id, text='Проходження опитування відмінено 😒')

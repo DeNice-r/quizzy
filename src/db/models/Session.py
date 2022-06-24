@@ -18,4 +18,4 @@ class Session(BaseModel):
     user_id = Column(BigInteger, ForeignKey(User.id, ondelete='CASCADE'), nullable=False)
     quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
     started_on = Column(DateTime, default=datetime.datetime.now, nullable=False)
-    question_number = Column(Integer, default=0, nullable=False)
+    question_number = Column(Integer, default=-1, nullable=False)

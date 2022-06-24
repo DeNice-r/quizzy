@@ -8,7 +8,7 @@ from sqlalchemy_utils import database_exists, create_database
 
 load_dotenv()
 
-db_engine = create_engine(os.environ['DATABASE_URL'],  # echo=True,
+db_engine = create_engine(os.environ['DATABASE_URL'],  echo=True,
                           future=True)
 db_session = sessionmaker(db_engine)
 if not database_exists(db_engine.url):

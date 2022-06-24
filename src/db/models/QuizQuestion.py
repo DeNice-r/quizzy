@@ -10,9 +10,9 @@ class QuizQuestion(BaseModel):
     def __init__(self, quiz_id, question, multi):
         self.quiz_id = quiz_id
         self.question = question
-        self.multi = multi
+        self.is_multi = multi
 
     id = Column(BigInteger, primary_key=True)
     quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
     question = Column(String(256), nullable=False)
-    multi = Column(Boolean, default=False, nullable=False)
+    is_multi = Column(Boolean, default=False, nullable=False)

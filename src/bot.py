@@ -19,9 +19,9 @@ def cmd_start(upd: Update, ctx: CallbackContext):
         відображуємо йому підказки щодо роботи з ботом,
     """
     msg = f'Ви успішно авторизувалися у {bot_name}.'
-    new_user = User(upd.effective_user.id)
     try:
         with db_session.begin() as s:
+            new_user = User(upd.effective_user.id)
             s.add(new_user)
     except IntegrityError as e:
         msg = f'Ви вже авторизовані у {bot_name}!'

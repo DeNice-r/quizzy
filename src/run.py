@@ -26,5 +26,6 @@ with db_session.begin() as s:
     if s.query(Session).first() is not None:
         s.query(Session).delete()
 
+
 updater.start_polling()
 updater.idle()

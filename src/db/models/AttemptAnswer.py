@@ -11,18 +11,18 @@ from db.engine import BaseModel
 class AttemptAnswer(BaseModel):
     __tablename__ = 'attempt_answer'
 
-    def __init__(self, session_id, question_id, answer_ids: tuple):
-        self.attempt_id = session_id
+    def __init__(self, attempt_id, question_id, answer_ids: tuple):
+        self.attempt_id = attempt_id
         self.question_id = question_id
         self.answer_ids = answer_ids
-
-    @classmethod
-    def from_session_answer(cls, session_answer: SessionAnswer):
-        return cls(session_answer.session_id, session_answer.question_id, tuple(session_answer.answer_ids))  # !!!!!!!!!!
 
     def __repr__(self):
         return f'Id: {self.id}, attempt_id: {self.attempt_id}, question_id: {self.question_id}, ' \
                f'answer_ids: {self.answer_ids}'
+
+    @classmethod
+    def from_session_answer(cls, attempt_id: int, session_answer: SessionAnswer):
+        return cls(attempt_id, session_answer.question_id, tuple(session_answer.answer_ids))  # !!!!!!!!!!
 
     id = Column(BigInteger, primary_key=True)
     attempt_id = Column(BigInteger, ForeignKey(Attempt.id, ondelete='CASCADE'), nullable=False)

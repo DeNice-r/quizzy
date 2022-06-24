@@ -24,6 +24,8 @@ class MQ(Enum):
 
 
 def get_all_quizzes_keyboard(user_id: int):
+    # TODO: "ви ще не створити опитувань("
+    # TODO: "cancel щоб вийти із цього меню" **
     with db_session.begin() as s:
         quizzes = s.query(Quiz).filter_by(author_id=user_id).all()
         keyboard = []

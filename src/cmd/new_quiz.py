@@ -216,7 +216,6 @@ def conv_nq_cat_done(upd: Update, ctx: CallbackContext):
 def conv_nq_que(upd: Update, ctx: CallbackContext):
     if RE_MED_TEXT.fullmatch(upd.message.text):
         with db_session.begin() as s:
-            print('111'*50)
             user = s.get(User, upd.effective_user.id)
             user.data['new_quiz']['questions'].append({
                 'question': upd.message.text,
@@ -225,7 +224,6 @@ def conv_nq_que(upd: Update, ctx: CallbackContext):
                 'is_multi': False
             })
             user.flag_data()
-            print('111'*50)
         ctx.bot.send_message(
             chat_id=upd.effective_chat.id,
             text=f'{choice(["Чудове", "Гарне", "Класне"])} запитання! Тепер оберіть тип запитання по кількості '

@@ -1,6 +1,7 @@
 import datetime
 
-from sqlalchemy import Column, BigInteger, ForeignKey, Integer, DateTime, FLOAT
+from sqlalchemy import Column, BigInteger, ForeignKey, Integer, DateTime, Float
+from sqlalchemy.orm import relationship, backref
 
 from db.models.Quiz import Quiz
 from db.models.Session import Session
@@ -25,4 +26,6 @@ class Attempt(BaseModel):
     quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
     started_on = Column(DateTime, nullable=False)
     finished_on = Column(DateTime, default=datetime.datetime.now, nullable=False)
-    mark = Column(FLOAT, nullable=True)
+    answers = relationship('AttemptAnswer', backref=backref('attempt', lazy='select'),
+                           cascade='all, delete, delete-orphan')
+    mark = Column(Float, nullable=True, default=0)

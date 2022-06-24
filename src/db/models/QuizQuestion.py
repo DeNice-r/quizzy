@@ -1,4 +1,5 @@
 from sqlalchemy import Column, BigInteger, Integer, ForeignKey, String, Boolean
+from sqlalchemy.orm import relationship, backref
 
 from db.models.Quiz import Quiz
 from db.engine import BaseModel
@@ -12,7 +13,14 @@ class QuizQuestion(BaseModel):
         self.question = question
         self.is_multi = multi
 
+    def __repr__(self):
+        return f'<QuizQuestion: {{id: {self.id}, quiz_id: {self.quiz_id}, question: {self.question}, ' \
+               f'is_multi: {self.is_multi}}}>'
+
     id = Column(BigInteger, primary_key=True)
     quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
     question = Column(String(256), nullable=False)
     is_multi = Column(Boolean, default=False, nullable=False)
+
+    answers = relationship('QuestionAnswer', backref=backref('question', lazy='select'),
+                           cascade='all, delete, delete-orphan')

@@ -1,4 +1,6 @@
 # Ініціалізація всіх моделей (за потреби - створення відповідних таблиць у базі даних).
+import logging
+
 import db.models.Attempt
 import db.models.AttemptAnswer
 import db.models.Group
@@ -20,12 +22,22 @@ import src.cmd.pass_
 import src.cmd.my_quizzes
 from bot import updater
 
+if __name__ == '__main__':
+    BaseModel.metadata.create_all(db_engine)
+    with db_session.begin() as s:
+        if s.query(Session).first() is not None:
+            s.query(Session).delete()
 
-BaseModel.metadata.create_all(db_engine)
-with db_session.begin() as s:
-    if s.query(Session).first() is not None:
-        s.query(Session).delete()
+    # mock?
+    try:
+        with db_session.begin() as s:
+            new_user = db.models.User.User(408526329)
+            s.add(new_user)
+    except:
+        pass
+
+    # TODO: create mock data
 
 
-updater.start_polling()
-updater.idle()
+    updater.start_polling()
+    updater.idle()

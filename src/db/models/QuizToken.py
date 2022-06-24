@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, Integer, ForeignKey
+from sqlalchemy.orm import relationship
 
 from db.models.Quiz import Quiz
 from db.engine import BaseModel
@@ -12,5 +13,9 @@ class QuizToken(BaseModel):
         self.token = generate_token()
         self.quiz_id = quiz_id
 
+    def __repr__(self):
+        return f'<{self.token}: {self.quiz_id}>'
+
     token = Column(String(10), primary_key=True)
-    quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
+    quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), unique=True)
+

@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Column, BigInteger, ForeignKey, Integer, DateTime
+from sqlalchemy import Column, BigInteger, ForeignKey, Integer, DateTime, UniqueConstraint
 
 from db.models.Quiz import Quiz
 from db.models.User import User
@@ -15,7 +15,7 @@ class Session(BaseModel):
         self.quiz_id = quiz_id
 
     id = Column(BigInteger, primary_key=True)
-    user_id = Column(BigInteger, ForeignKey(User.id, ondelete='CASCADE'), nullable=False)
+    user_id = Column(BigInteger, ForeignKey(User.id, ondelete='CASCADE'), nullable=False, unique=True)
     quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
     started_on = Column(DateTime, default=datetime.datetime.now, nullable=False)
     question_number = Column(Integer, default=-1, nullable=False)

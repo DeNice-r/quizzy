@@ -1,4 +1,5 @@
 from sqlalchemy import Column, BigInteger, JSON
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.orm.attributes import flag_modified
 
 from db.engine import BaseModel
@@ -9,9 +10,6 @@ class User(BaseModel):
 
     def __init__(self, user_id):
         self.id = user_id
-
-    id = Column(BigInteger, autoincrement=False, primary_key=True)
-    data = Column(JSON, default={})
 
     def flag_data(self):
         flag_modified(self, 'data')
@@ -27,3 +25,8 @@ class User(BaseModel):
     def clear_data(self):
         self.data.clear()
         flag_modified(self, 'data')
+
+    id = Column(BigInteger, autoincrement=False, primary_key=True)
+    data = Column(JSON, default={})
+    current_session = relationship('Session', backref=backref('user', lazy='select'), uselist=False,
+                                   cascade='all, delete, delete-orphan')

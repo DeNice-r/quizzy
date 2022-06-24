@@ -1,4 +1,5 @@
-from sqlalchemy import Column, BigInteger, ForeignKey, Integer
+from sqlalchemy import Column, BigInteger, ForeignKey, Integer, Float
+from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import ARRAY
 
 from db.models.Attempt import Attempt
@@ -28,3 +29,5 @@ class AttemptAnswer(BaseModel):
     attempt_id = Column(BigInteger, ForeignKey(Attempt.id, ondelete='CASCADE'), nullable=False)
     question_id = Column(Integer, ForeignKey(QuizQuestion.id, ondelete='CASCADE'), nullable=False)
     answer_ids = Column(ARRAY(BigInteger, as_tuple=ForeignKey(QuestionAnswer.id)), nullable=False)
+    mark = Column(Float, nullable=False, default=0)
+    # answers = relationship('QuestionAnswer', primaryjoin='QuestionAnswer.id == any(AttemptAnswer.answer_ids)')

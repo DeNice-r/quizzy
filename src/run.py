@@ -1,6 +1,7 @@
 # Ініціалізація всіх моделей (за потреби - створення відповідних таблиць у базі даних).
 import logging
 
+from sqlalchemy import text
 import db.models.Attempt
 import db.models.AttemptAnswer
 import db.models.Group
@@ -28,10 +29,12 @@ if __name__ == '__main__':
         if s.query(Session).first() is not None:
             s.query(Session).delete()
 
+        # s.execute(text("""SELECT pg_switch_wal();"""))
+
     # mock?
     try:
         with db_session.begin() as s:
-            new_user = db.models.User.User(408526329)
+            new_user = db.models.User.User(1)
             s.add(new_user)
     except:
         pass

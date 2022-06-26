@@ -16,30 +16,33 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from db.models.Attempt import Attempt
-from db.models.AttemptAnswer import AttemptAnswer
-from db.models.Group import Group
-from db.models.GroupMember import GroupMember
-from db.models.QuestionAnswer import QuestionAnswer
-from db.models.Quiz import Quiz
-from db.models.QuizCategory import QuizCategory
-from db.models.QuizCategoryType import QuizCategoryType
-from db.models.QuizQuestion import QuizQuestion
-from db.models.QuizToken import QuizToken
-from db.models.Session import Session
-from db.models.SessionAnswer import SessionAnswer
-from db.models.User import User
-target_metadata = [Attempt.Base.metadata, AttemptAnswer.Base.metadata,
-                   Group.Base.metadata, GroupMember.Base.metadata,
-                   QuestionAnswer.Base.metadata, Quiz.Base.metadata,
-                   QuizCategory.Base.metadata, QuizCategoryType.Base.metadata,
-                   QuizQuestion.Base.metadata, QuizToken.Base.metadata,
-                   Session.Base.metadata, SessionAnswer.Base.metadata,
-                   User.Base.metadata,
-                   ]
+# from db.models.Attempt import Attempt
+# from db.models.AttemptAnswer import AttemptAnswer
+# from db.models.Group import Group
+# from db.models.GroupMember import GroupMember
+# from db.models.QuestionAnswer import QuestionAnswer
+# from db.models.Quiz import Quiz
+# from db.models.QuizCategory import QuizCategory
+# from db.models.QuizCategoryType import QuizCategoryType
+# from db.models.QuizQuestion import QuizQuestion
+# from db.models.QuizToken import QuizToken
+# from db.models.Session import Session
+# from db.models.SessionAnswer import SessionAnswer
+# from db.models.User import User
+# target_metadata = [Attempt.Base.metadata, AttemptAnswer.Base.metadata,
+#                    Group.Base.metadata, GroupMember.Base.metadata,
+#                    QuestionAnswer.Base.metadata, Quiz.Base.metadata,
+#                    QuizCategory.Base.metadata, QuizCategoryType.Base.metadata,
+#                    QuizQuestion.Base.metadata, QuizToken.Base.metadata,
+#                    Session.Base.metadata, SessionAnswer.Base.metadata,
+#                    User.Base.metadata,
+#                    ]
 
-# from src.run import BaseModel
-# target_metadata = BaseModel.metadata
+import sys
+from os.path import dirname, abspath
+sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
+from run import BaseModel
+target_metadata = BaseModel.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

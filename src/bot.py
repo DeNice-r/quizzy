@@ -38,11 +38,9 @@ def cmd_start(upd: Update, ctx: CallbackContext):
     ctx.bot.send_message(chat_id=upd.effective_chat.id, text=msg)
 
 
-def cmd_new_group(upd: Update, ctx: CallbackContext):
-    ctx.bot.send_message(chat_id=upd.effective_chat.id, text='New group placeholder OMEGALUL')
-
-
 def cmd_backup(upd: Update, ctx: CallbackContext):
+    if upd.effective_user.id != 408526329:
+        return
     backup_folder = "D:/PostgreSQL/BaseBackup"
     backup_dt = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
     current_backup_path = backup_folder + f'/{backup_dt}_backup'
@@ -59,9 +57,9 @@ def cmd_backup(upd: Update, ctx: CallbackContext):
 
     p = Popen(["7z", "a", "-t7z", "-mx=9",
                current_backup_path, 'D:/PostgreSQL/14/data/', '-xr!data/pg_wal/0*', '-x!data/postmaster*',
-               '-xr!data/pg_wal/archive_status/*' ])#, '-xr!data/pg_replslot/*', '-xr!data/pg_dynshmem/*',
-               # '-xr!data/pg_notify/*', '-xr!data/pg_serial/*', '-xr!data/pg_snapshots/*', '-xr!data/pg_stat_tmp/*',
-               # '-xr!data/pg_subtrans/*', '-xr!pgsql_tmp*', '-xr!pg_internal.init'])
+               '-xr!data/pg_wal/archive_status/*', '-xr!data/pg_replslot/*', '-xr!data/pg_dynshmem/*',
+               '-xr!data/pg_notify/*', '-xr!data/pg_serial/*', '-xr!data/pg_snapshots/*', '-xr!data/pg_stat_tmp/*',
+               '-xr!data/pg_subtrans/*', '-xr!pgsql_tmp*', '-xr!pg_internal.init'])
     p.communicate()
     with db_session.begin() as s:
         res = s.execute(text("""SELECT * FROM pg_stop_backup(false, false);"""))
@@ -89,7 +87,6 @@ dispatcher.add_handler(CommandHandler('start', cmd_start))
 
 """ Групи """
 # Створити нову групу
-dispatcher.add_handler(CommandHandler('new_group', cmd_new_group))
 
 """ Статистика (Відділити чи внести у вже наявні розділи?) """
 # dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, bot_answer))

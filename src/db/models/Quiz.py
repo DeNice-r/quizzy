@@ -21,11 +21,11 @@ class Quiz(BaseModel):
 
     @hybrid_property
     def token(self):
-        return self.__token.token
+        return self.token_ref.token
 
     @hybrid_property
     def categories(self):
-        return [x.name for x in self.__categories]
+        return [x.name for x in self.categories_ref]
 
     id = Column(Integer, primary_key=True)
     name = Column(String(50), nullable=False)
@@ -36,9 +36,9 @@ class Quiz(BaseModel):
 
     questions = relationship('QuizQuestion', backref=backref('quiz', lazy='select'),
                              cascade='all, delete, delete-orphan')
-    __categories = relationship('QuizCategoryType',
-                                secondary='quiz_category',
-                                primaryjoin='Quiz.id==QuizCategory.quiz_id',
-                                secondaryjoin='QuizCategoryType.id==QuizCategory.category_id')
-    __token = relationship('QuizToken', backref=backref('quiz', lazy='select'), uselist=False,
-                           cascade='all, delete, delete-orphan')
+    categories_ref = relationship('QuizCategoryType',
+                                  secondary='quiz_category',
+                                  primaryjoin='Quiz.id==QuizCategory.quiz_id',
+                                  secondaryjoin='QuizCategoryType.id==QuizCategory.category_id')
+    token_ref = relationship('QuizToken', backref=backref('quiz', lazy='select'), uselist=False,
+                             cascade='all, delete, delete-orphan')

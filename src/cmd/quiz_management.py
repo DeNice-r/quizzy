@@ -20,7 +20,7 @@ from enum import Enum
 
 
 class MQ(Enum):
-    SHOW, EDIT, RENAME, EDIT_QUESTION, BACK_TO = range(5)
+    SHOW, EDIT, RENAME, EDIT_QUESTION, DELETE, BACK_TO = range(6)
 
 
 def get_all_quizzes_keyboard(user_id: int):
@@ -34,31 +34,39 @@ def get_all_quizzes_keyboard(user_id: int):
                 InlineKeyboardButton(quizzes[q_idx].name, callback_data=str(quizzes[q_idx].id)),
             ])
             if q_idx + 1 < len(quizzes):
-                keyboard[-1].append(InlineKeyboardButton(quizzes[q_idx + 1].name, callback_data=str(quizzes[q_idx].id)))
+                keyboard[-1].append(InlineKeyboardButton(quizzes[q_idx + 1].name, callback_data=str(quizzes[q_idx+1].id)))
     return InlineKeyboardMarkup(keyboard)
 
 
-def get_edit_quiz_keyboard(quiz: Quiz):
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton('Переіменувати', callback_data=f'{quiz.id}.rename'),
-            InlineKeyboardButton('Публічне' if quiz.is_public else 'Приватне', callback_data=f'{quiz.id}.privacy'),
-        ],
-        [
-            InlineKeyboardButton('Проглянути всі запитання', callback_data=f'{quiz.id}.show_questions'),
-            InlineKeyboardButton('Змінити запитання', callback_data=f'{quiz.id}.edit_question'),
-        ],
-        [
-            # TODO: регенерація токена
-            # TODO: кнопка відображення статистики
-        ],
-        [
-            InlineKeyboardButton('Видалити опитування', callback_data=f'{quiz.id}.delete'),
-        ],
-        [
-            InlineKeyboardButton('🚪 Назад до списку опитувань', callback_data=f'{quiz.id}.back'),
-        ]
-    ])
+def get_edit_quiz_keyboard(quiz: Quiz | int):
+    with db_session.begin() as s:
+        if isinstance(quiz, int):
+            quiz = s.get(Quiz, quiz)
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton('Публічне' if quiz.is_public else 'Приватне', callback_data=f'{quiz.id}.privacy'),
+                InlineKeyboardButton('Активоване' if quiz.is_available else 'Деактивоване',
+                                     callback_data=f'{quiz.id}.availability'),
+            ],
+            [
+                InlineKeyboardButton('Переіменувати', callback_data=f'{quiz.id}.rename'),
+                InlineKeyboardButton('Відредагувати категорії', callback_data=f'{quiz.id}.edit_categories'),
+            ],
+            [
+                InlineKeyboardButton('Проглянути всі запитання', callback_data=f'{quiz.id}.show_questions'),
+                InlineKeyboardButton('Відредагувати запитання', callback_data=f'{quiz.id}.edit_questions'),
+            ],
+            [
+                    InlineKeyboardButton('Новий токен', callback_data=f'{quiz.id}.regenerate_token'),
+                    InlineKeyboardButton('Проглянути статистику', callback_data=f'{quiz.id}.show_stats'),
+            ],
+            [
+                InlineKeyboardButton('Видалити опитування', callback_data=f'{quiz.id}.delete'),
+            ],
+            [
+                InlineKeyboardButton('🚪 Назад до списку опитувань', callback_data=f'{quiz.id}.back'),
+            ],
+        ])
 
 
 def get_back_to_keyboard(user_id: int, quiz_id: int):
@@ -82,7 +90,7 @@ def get_quiz_info(quiz: Quiz | int):
 
         return f'Опитування "{quiz.name}"\n' \
                f'Токен для проходження: {tok.token}\n' \
-               f'Категорії: {", ".join(cats)}\n'
+               f'Категорії: {", ".join(quiz.categories)}\n'
         # TODO: to be continued...
 
 
@@ -130,11 +138,30 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
                 query.edit_message_reply_markup(get_edit_quiz_keyboard(quiz))
             return MQ.EDIT
 
+        case quiz_id, 'availability':
+            with db_session.begin() as s:
+                quiz = s.get(Quiz, quiz_id)
+                quiz.is_available = not quiz.is_available
+                s.flush()
+                query.edit_message_reply_markup(get_edit_quiz_keyboard(quiz))
+            return MQ.EDIT
+        case quiz_id, 'edit_categories':
+            # TODO
+            raise NotImplemented
         case quiz_id, 'show_questions':
+            # TODO
             raise NotImplemented
         case quiz_id, 'regenerate_token':
-            raise NotImplemented
+            with db_session.begin() as s:
+                old_token = s.query(QuizToken).filter_by(quiz_id=quiz_id).one_or_none()
+                s.delete(old_token)
+                s.flush()
+                new_token = QuizToken(quiz_id)
+                s.add(new_token)
+            query.edit_message_text(get_quiz_info(quiz_id), reply_markup=get_edit_quiz_keyboard(quiz_id))
+            return MQ.EDIT
         case quiz_id, 'show_stats':
+            # TODO
             raise NotImplemented
         case quiz_id, 'edit_question':
             qs = 'Запитання у цьому опитуванні:\n'
@@ -151,11 +178,15 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
             return MQ.EDIT_QUESTION
 
         case quiz_id, 'delete':
-            # TODO: are you sure?
-            raise NotImplemented
-
+            with db_session.begin() as s:
+                quiz = s.get(Quiz, quiz_id)
+                query.edit_message_text(f'Ви впевнені, що хочете видалити опитування "{quiz.name}"?',
+                                reply_markup=InlineKeyboardMarkup(
+                                    [[InlineKeyboardButton('Так', callback_data=f'{quiz_id}.yes'),
+                                      InlineKeyboardButton('Ні', callback_data=f'{quiz_id}.no')]]))
+                return MQ.DELETE
         case quiz_id, 'back':
-            query.edit_message_text(get_quiz_info(quiz_id),
+            query.edit_message_text('Оберіть опитування:',
                                     reply_markup=get_all_quizzes_keyboard(upd.effective_user.id))
             return MQ.SHOW
 
@@ -182,6 +213,24 @@ def rename(upd: Update, ctx: CallbackContext):
 
 def edit_question(upd: Update, ctx: CallbackContext):
     raise NotImplemented
+
+
+def quiz_delete(upd: Update, ctx: CallbackContext):
+    query = upd.callback_query
+    action_split = query.data.split('.')
+    msg = "Опитування успішно видалено!"
+    match action_split:
+        case quiz_id, 'yes':
+            with db_session.begin() as s:
+                quiz = s.get(Quiz, quiz_id)
+                s.delete(quiz)
+        case quiz_id, 'no':
+            msg = "Видалення опитування відмінено 🎉"
+    query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup([[
+        InlineKeyboardButton('🚪 Повернутися до списку опитувань', callback_data=f'{upd.effective_user.id}.quiz_list'),
+    ]]))
+    query.answer()
+    return MQ.BACK_TO
 
 
 def back_to(upd: Update, ctx: CallbackContext):
@@ -216,6 +265,9 @@ dispatcher.add_handler(ConversationHandler(
         ],
         MQ.EDIT_QUESTION: [
             MessageHandler(Filters.text, edit_question)
+        ],
+        MQ.DELETE: [
+            CallbackQueryHandler(quiz_delete),
         ],
         MQ.BACK_TO: [
             CallbackQueryHandler(back_to),

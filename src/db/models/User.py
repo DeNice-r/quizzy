@@ -26,7 +26,19 @@ class User(BaseModel):
         self.data.clear()
         flag_modified(self, 'data')
 
+    @property
+    def is_admin(self):
+        print(self.admin)
+        return self.admin is not None
+
     id = Column(BigInteger, autoincrement=False, primary_key=True)
     data = Column(JSON, default={})
     current_session = relationship('Session', backref=backref('user', lazy='select'), uselist=False,
                                    cascade='all, delete, delete-orphan')
+    quizzes = relationship('Quiz', backref=backref('author', lazy='select'),
+                                   cascade='all, delete, delete-orphan')
+    attempts = relationship('Attempt', backref=backref('user', lazy='select'),
+                                   cascade='all, delete, delete-orphan')
+    # TODO: Групи, членом яких є користувач
+    admin = relationship('Admin', backref=backref('user', lazy='select'), uselist=False,
+                         cascade='all, delete, delete-orphan')

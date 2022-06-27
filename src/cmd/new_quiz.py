@@ -76,33 +76,6 @@ def cmd_new_quiz(upd: Update, ctx: CallbackContext):
     return NQ.NAME
 
 
-# TODO: замінити на кнопку в меню опитування
-def cmd_remove_quiz(upd: Update, ctx: CallbackContext):
-    split = upd.message.text.split(' ')
-    if len(split) != 2:
-        ctx.bot.send_message(chat_id=upd.effective_chat.id, text='Щоб видалити власне опитування потрібно вказати '
-                                                                 'його код:\n/pass Abc123dEF4')
-        return
-
-    with db_session.begin() as s:
-        quiz_token = s.query(QuizToken).filter_by(token=split[1]).one_or_none()
-        if quiz_token is None:
-            ctx.bot.send_message(chat_id=upd.effective_chat.id,
-                                 text='Опитування не знайдено 😢. Можливо, ви помилилися у коді або автор опитування '
-                                      'його змінив.')
-            return
-
-        quiz = s.get(Quiz, quiz_token.quiz_id)
-        user = s.get(User, upd.effective_user.id)
-        if quiz.author_id == user.id:
-            s.delete(quiz)
-            ctx.bot.send_message(chat_id=upd.effective_chat.id,
-                                 text='Опитування видалено 😢.')
-        else:
-            ctx.bot.send_message(chat_id=upd.effective_chat.id,
-                                 text='Опитування неможливо видалити 😎.')
-
-
 def conv_nq_name(upd: Update, ctx: CallbackContext):
     name = upd.message.text
     if RE_SHORT_TEXT.fullmatch(name):

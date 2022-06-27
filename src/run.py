@@ -15,12 +15,15 @@ import db.models.QuizToken
 from db.models.Session import Session
 import db.models.SessionAnswer
 import db.models.User
+import db.models.Admin
 from db.engine import db_engine, db_session, BaseModel
 
 # Ініціалізація всіх модулів бота.
 import src.cmd.new_quiz
 import src.cmd.pass_
 import src.cmd.my_quizzes
+import src.cmd.new_group
+
 from bot import updater
 
 if __name__ == '__main__':
@@ -34,7 +37,7 @@ if __name__ == '__main__':
     # mock?
     try:
         with db_session.begin() as s:
-            new_user = db.models.User.User(1)
+            new_user = db.models.User.User(408526329)
             s.add(new_user)
     except:
         pass

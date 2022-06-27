@@ -187,6 +187,7 @@ def cmd_search(upd: Update, ctx: CallbackContext):
             chat_id=upd.effective_chat.id,
             text='Щоб знайти опитування потрібно вказати повністю або частково його назву (наприклад, /search '
                  'Опитування про довіру владі), також можна знайти опитування за його кодом (/search AbCD12G3hI).')
+        return ConversationHandler.END
 
     term = ' '.join(split[1:])
     with db_session.begin() as s:
@@ -293,6 +294,7 @@ def choose_callback(upd: Update, ctx: CallbackContext):
     action = query.data
     query.answer()
     print(action)
+    # TODO: pagination
     match action:
         case 1:
             pass
@@ -319,7 +321,6 @@ def choose_callback(upd: Update, ctx: CallbackContext):
         with db_session.begin() as s:
             quiz = s.get(Quiz, action)
             query.edit_message_text(f'Обрано тестування "{quiz.name}".')
-            start_quiz(upd, ctx, quiz)
             return start_quiz(upd, ctx, quiz)
     return PQ.CHOOSE
 

@@ -2,7 +2,7 @@ from sqlalchemy import Column, String, Integer, ForeignKey
 from sqlalchemy.orm import relationship
 
 from db.models.Quiz import Quiz
-from db.engine import BaseModel
+from db.engine import BaseModel, db_session
 from utils import generate_token
 
 
@@ -10,7 +10,11 @@ class QuizToken(BaseModel):
     __tablename__ = 'quiz_token'
 
     def __init__(self, quiz_id):
-        self.token = generate_token()
+        token = generate_token()
+        with db_session.begin() as s:
+            while s.get(QuizToken, token) is not None:
+                token = generate_token()
+        self.token = token
         self.quiz_id = quiz_id
 
     def __repr__(self):

@@ -17,6 +17,11 @@ class QuizQuestion(BaseModel):
         return f'<QuizQuestion: {{id: {self.id}, quiz_id: {self.quiz_id}, question: {self.question}, ' \
                f'is_multi: {self.is_multi}}}>'
 
+    def __str__(self):
+        return f'Запитання: {self.question}\n' + \
+               f'Відповіді:\n' + \
+               '\n'.join([str(x) for x in self.answers])
+
     id = Column(BigInteger, primary_key=True)
     quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
     question = Column(String(256), nullable=False)

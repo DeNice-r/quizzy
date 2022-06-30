@@ -27,7 +27,7 @@ class NQ(Enum):
     NAME, IS_STATISTICAL, NEW_CATEGORY, QUE, QUE_IS_MULTI, QUE_ANS_RIGHT, QUE_ANS = range(7)
 
 
-def get_cat_markup(user_id, cat_id_to_remove=None):
+def get_cat_keyboard(user_id, cat_id_to_remove=None):
     keyboard = []
     with db_session.begin() as s:
         user = s.get(User, user_id)
@@ -43,16 +43,17 @@ def get_cat_markup(user_id, cat_id_to_remove=None):
 
 def privacy_callback(upd: Update, ctx: CallbackContext):
     query = upd.callback_query
-    split = query.data.split('.')
-    action = eval(split[1])
+    action = query.data
+    if action == 'privacy':
+        with db_session.begin() as s:
+            user = s.get(User, upd.effective_user.id)
+            user.data['new_quiz']['privacy'] = not user.data['new_quiz']['privacy']
+            user.flag_data()
+            query.edit_message_reply_markup(
+                InlineKeyboardMarkup([[
+                    InlineKeyboardButton(('Публічне' if user.data['new_quiz']['privacy'] else 'Приватне') +
+                                         ' опитування', callback_data='privacy')]]))
     query.answer()
-    query.edit_message_reply_markup(
-        InlineKeyboardMarkup([[InlineKeyboardButton(('Публічне' if action else 'Приватне') + ' опитування',
-                                                    callback_data='privacy.' + str(not action))]]))
-    with db_session.begin() as s:
-        user = s.get(User, upd.effective_user.id)
-        user.data['new_quiz']['privacy'] = action
-        user.flag_data()
 
 
 def cmd_new_quiz(upd: Update, ctx: CallbackContext):
@@ -60,15 +61,14 @@ def cmd_new_quiz(upd: Update, ctx: CallbackContext):
         user = s.get(User, upd.effective_user.id)
 
         # Можливість продовжити створення?
-        user.data['new_quiz'] = {
+        user.set_data('new_quiz', {
             'categories': [],
             'questions': [],
             'privacy': True
-        }
-        user.flag_data()
+        })
 
-    keyboard = [[InlineKeyboardButton('Публічне опитування', callback_data='privacy.False')]]
-    ctx.bot.send_message(chat_id=upd.effective_chat.id, text='1. Введіть назву нового опитування. Щоб відмінити '
+    keyboard = [[InlineKeyboardButton('Публічне опитування', callback_data='privacy')]]
+    ctx.bot.send_message(chat_id=upd.effective_chat.id, text='Введіть назву нового опитування. Щоб відмінити '
                                                              'створення опитування, введіть /cancel. Також ви можете '
                                                              'змінити налаштування публічності цього опитування, '
                                                              'натиснувши кнопку під цим повідомленням.',
@@ -164,14 +164,14 @@ def conv_nq_cat(upd: Update, ctx: CallbackContext):
 
 def conv_nq_cat_show(upd: Update, ctx: CallbackContext):
     ctx.bot.send_message(chat_id=upd.effective_chat.id, text=f'Категорії опитування (нажміть для видалення категорії):',
-                         reply_markup=get_cat_markup(upd.effective_user.id))
+                         reply_markup=get_cat_keyboard(upd.effective_user.id))
     return NQ.NEW_CATEGORY
 
 
 def rem_cat_callback(upd: Update, ctx: CallbackContext):
     query = upd.callback_query
     query.answer()
-    query.edit_message_reply_markup(get_cat_markup(upd.effective_user.id, int(query.data)))
+    query.edit_message_reply_markup(get_cat_keyboard(upd.effective_user.id, int(query.data)))
 
 
 def conv_nq_cat_done(upd: Update, ctx: CallbackContext):
@@ -240,19 +240,33 @@ def conv_nq_que_right_ans(upd: Update, ctx: CallbackContext):
     if RE_MED_TEXT.fullmatch(upd.message.text):
         with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
+            is_stat = user.data['new_quiz']['is_statistical']
+            is_multi = user.data['new_quiz']['questions'][-1]['is_multi']
+            right_answer_count = len(user.data['new_quiz']['questions'][-1]['right_answers'])
+            if is_stat and right_answer_count > 8:
+                ctx.bot.send_message(
+                    chat_id=upd.effective_chat.id,
+                    text=f'Нажаль, більше 9 відповідей бути не може 😢. Для переходу на наступний етап відправте '
+                         f'/done.')
+                return
+            if is_multi and right_answer_count > 7:
+                if not is_stat:
+                    ctx.bot.send_message(
+                        chat_id=upd.effective_chat.id,
+                        text=f'Нажаль, більше 8 вірних відповідей бути не може 😢. Для переходу на наступний етап '
+                             f'відправте /done.')
+                return
             user.data['new_quiz']['questions'][-1]['right_answers'].append(upd.message.text)
             user.flag_data()
             new_len = len(user.data['new_quiz']['questions'][-1]['right_answers'])
-            is_stat = user.data['new_quiz']['is_statistical']
-            is_multi = user.data['new_quiz']['questions'][-1]['is_multi']
             if is_stat or is_multi:
                 ctx.bot.send_message(
                     chat_id=upd.effective_chat.id,
                     text=f'{choice(["Супер", "Чудово", "Блискуче"])}, '
                          f'{"" if is_stat else "вірну "}відповідь додано! Введіть наступну відповідь' +
                          ("" if new_len < 2 else (" або введіть /done для переходу до " +
-                         ("наступного запитання" if is_stat else "невірних відповідей"))) + '.')
-                # TODO: !!!!!!
+                                                  (
+                                                      "наступного запитання" if is_stat else "невірних відповідей"))) + '.')
                 return NQ.QUE_ANS_RIGHT
             else:
                 ctx.bot.send_message(
@@ -396,7 +410,5 @@ dispatcher.add_handler(ConversationHandler(
     },
     fallbacks=[CommandHandler('cancel', conv_nq_cancel),
                CallbackQueryHandler(privacy_callback),
-               ]
+               ],
 ))
-
-dispatcher.add_handler(CommandHandler('remove_quiz', cmd_remove_quiz))

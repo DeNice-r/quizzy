@@ -22,9 +22,10 @@ class User(BaseModel):
         del self.data[key]
         flag_modified(self, 'data')
 
-    def clear_data(self):
-        self.data.clear()
-        flag_modified(self, 'data')
+    # May cause bugs therefore should not be used.
+    # def clear_data(self):
+    #     self.data.clear()
+    #     flag_modified(self, 'data')
 
     @property
     def is_admin(self):
@@ -36,9 +37,13 @@ class User(BaseModel):
     current_session = relationship('Session', backref=backref('user', lazy='select'), uselist=False,
                                    cascade='all, delete, delete-orphan')
     quizzes = relationship('Quiz', backref=backref('author', lazy='select'),
-                                   cascade='all, delete, delete-orphan')
+                           cascade='all, delete, delete-orphan')
     attempts = relationship('Attempt', backref=backref('user', lazy='select'),
-                                   cascade='all, delete, delete-orphan')
-    # TODO: Групи, членом яких є користувач
+                            cascade='all, delete, delete-orphan')
+    owner_of_groups = relationship('Group', foreign_keys='Group.owner_id', cascade='all, delete, delete-orphan')
+    member_of_groups = relationship('Group', viewonly=True,
+                                    secondary='group_member',
+                                    primaryjoin='User.id==GroupMember.user_id',
+                                    secondaryjoin='Group.id==GroupMember.group_id')
     admin = relationship('Admin', backref=backref('user', lazy='select'), uselist=False,
                          cascade='all, delete, delete-orphan')

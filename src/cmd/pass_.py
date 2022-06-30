@@ -44,7 +44,7 @@ def get_current_markup(user_id: int):
         keyboard = []
         for ax in order:
             keyboard.append([
-                InlineKeyboardButton(f'{"♥" if answers[ax].id in selection else "🖤"} {answers[ax].answer}',
+                InlineKeyboardButton(f'{GOOD_SIGN if answers[ax].id in selection else BAD_SIGN} {answers[ax].answer}',
                                      callback_data=str(answers[ax].id))
             ])
         keyboard.append([InlineKeyboardButton('⇤', callback_data='start'),
@@ -119,7 +119,9 @@ def update_question(send_message, user_id: int, action: str):
 
 def session_to_attempt(user_id: int):
     with db_session.begin() as s:
-        quiz_session = s.query(Session).filter_by(user_id=user_id).one()
+        quiz_session = s.query(Session).filter_by(user_id=user_id).one_or_none()
+        if quiz_session is None:
+            return None
         attempt = Attempt.from_session(quiz_session)
         s.add(attempt)
         s.flush()
@@ -182,7 +184,7 @@ def cmd_pass(upd: Update, ctx: CallbackContext):
 
 def cmd_search(upd: Update, ctx: CallbackContext):
     split = upd.message.text.split(' ')
-    if len(split) != 2:
+    if len(split) < 2:
         ctx.bot.send_message(
             chat_id=upd.effective_chat.id,
             text='Щоб знайти опитування потрібно вказати повністю або частково його назву (наприклад, /search '
@@ -191,11 +193,18 @@ def cmd_search(upd: Update, ctx: CallbackContext):
 
     term = ' '.join(split[1:])
     with db_session.begin() as s:
-        result: list = s.query(Quiz).filter(and_(Quiz.is_public==True, Quiz.name.ilike(f'%{term}%'))).all()
+        result: list = s.query(Quiz).filter(
+            and_(Quiz.is_available == True, and_(Quiz.is_public == True, Quiz.name.ilike(f'%{term}%')))).all()
+        quiz = s.query(Quiz)\
+            .join(QuizToken, Quiz.id == QuizToken.quiz_id).\
+            filter(and_(QuizToken.token == term, Quiz.is_available == True)).one_or_none()
+        if quiz is not None:
+            result.append(quiz)
         if len(result) == 0:
-            token = s.query(QuizToken).filter_by(token=term).one_or_none()
-            if token is not None:
-                result = [token.quiz]
+            ctx.bot.send_message(
+                chat_id=upd.effective_chat.id,
+                text=f'За запитом "{term}" не знайдено жодних результатів 😢')
+            return ConversationHandler.END
         keyboard = []
         for x in result:
             keyboard.append([InlineKeyboardButton(x.name, callback_data=x.id)])
@@ -293,7 +302,6 @@ def choose_callback(upd: Update, ctx: CallbackContext):
     query = upd.callback_query
     action = query.data
     query.answer()
-    print(action)
     # TODO: pagination
     match action:
         case 1:
@@ -346,5 +354,5 @@ dispatcher.add_handler(ConversationHandler(
         ],
     },
     # TODO: удосконалити механізм виходу з опитування?
-    fallbacks=[CommandHandler('cancel', conv_pq_cancel), ]
+    fallbacks=[CommandHandler('cancel', conv_pq_cancel), ],
 ))

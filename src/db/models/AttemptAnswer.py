@@ -30,5 +30,5 @@ class AttemptAnswer(BaseModel):
     question_id = Column(Integer, ForeignKey(QuizQuestion.id, ondelete='CASCADE'), nullable=False)
     answer_ids = Column(ARRAY(BigInteger, as_tuple=ForeignKey(QuestionAnswer.id)), nullable=False)
     UniqueConstraint(attempt_id, question_id, name='unique_attempt_answer')
-    mark = Column(Numeric, nullable=False, server_default='0')
+    mark = Column(Numeric, nullable=True, default=0, server_default='0')
     # answers = relationship('QuestionAnswer', primaryjoin='QuestionAnswer.id == any(AttemptAnswer.answer_ids)')

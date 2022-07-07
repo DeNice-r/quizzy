@@ -293,6 +293,7 @@ def answer_callback(upd: Update, ctx: CallbackContext):
                 if not quiz.is_statistical:
                     query.edit_message_text(f'Обрахування результатів тестування...')
                     query.edit_message_text(f'Результати тестування:\n'
+                                            f'Унікальний код: {attempt.uuid}\n'
                                             f'Назва: {quiz.name}\n'
                                             f'Код: {quiz.token}\n'
                                             f'Час проходження: {(attempt.finished_on - attempt.started_on)}\n'

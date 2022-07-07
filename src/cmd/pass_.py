@@ -16,7 +16,6 @@ from db.models.QuizQuestion import QuizQuestion
 from db.models.Session import Session
 from db.models.SessionAnswer import SessionAnswer
 from db.models.User import User
-from db.utils import update_mark
 
 # Misc.
 from enum import Enum
@@ -279,7 +278,6 @@ def answer_callback(upd: Update, ctx: CallbackContext):
         if not update_question(query.edit_message_text, user_id, action):
             with db_session.begin() as s:
                 attempt_id = session_to_attempt(user_id)
-                update_mark(attempt_id)
                 attempt = s.get(Attempt, attempt_id)
                 retry_number = s.query(Attempt).filter_by(user_id=user_id, quiz_id=attempt.quiz_id).count()
                 quiz = s.get(Quiz, attempt.quiz_id)

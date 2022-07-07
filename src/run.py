@@ -13,6 +13,7 @@ from db.models.Session import Session
 import db.models.SessionAnswer
 import db.models.User
 import db.models.Admin
+import db.utils
 from db.engine import db_engine, db_session, BaseModel
 
 # Ініціалізація всіх модулів бота.

@@ -832,7 +832,7 @@ def add_question_ans(upd: Update, ctx: CallbackContext):
     else:
         ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повідомлення містить недопустимі символи або занадто "
                                                                  "довге :(")
-    return MQ.ADD_ANS
+    return MQ.QUE_ANS
 
 
 def add_question_done(upd: Update, ctx: CallbackContext):

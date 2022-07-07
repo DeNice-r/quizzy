@@ -6,14 +6,13 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, CallbackContext, ConversationHandler, CallbackQueryHandler
 
 # DB API
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from db.engine import db_session
 from db.models.Attempt import Attempt
 from db.models.AttemptAnswer import AttemptAnswer
 from db.models.QuestionAnswer import QuestionAnswer
 from db.models.Quiz import Quiz
 from db.models.QuizQuestion import QuizQuestion
-from db.models.QuizToken import QuizToken
 from db.models.Session import Session
 from db.models.SessionAnswer import SessionAnswer
 from db.models.User import User
@@ -63,15 +62,9 @@ def get_search_data(user_id, term):
         user = s.get(User, user_id)
         page = user.data['search']['page']
         result_query = s.query(Quiz).filter(
-            and_(Quiz.is_available == True, and_(Quiz.is_public == True, Quiz.name.ilike(f'%{term}%'))))
+            and_(Quiz.is_available == True, and_(or_(Quiz.is_public == True, Quiz.name.ilike(f'%{term}%'), Quiz.token == term))))
         result_count = result_query.count()
         result = result_query.offset(user.data['search']['page'] * MAX_NUMBER).limit(MAX_NUMBER - (1 if page == 0 else 0)).all()
-        quiz = s.query(Quiz)\
-            .join(QuizToken, Quiz.id == QuizToken.quiz_id).\
-            filter(and_(QuizToken.token == term, Quiz.is_available == True)).one_or_none()
-        if quiz is not None and page == 0:
-            result.insert(0, quiz)
-            result_count += 1
         message = f'За запитом "{term}" отримано результатів: {result_count} (натисніть для проходження тесту)'
 
         keyboard = []
@@ -209,13 +202,13 @@ def cmd_pass(upd: Update, ctx: CallbackContext):
         return ConversationHandler.END
 
     with db_session.begin() as s:
-        quiz_token = s.query(QuizToken).filter_by(token=split[1]).one_or_none()
-        if quiz_token is None:
+        quiz = s.query(Quiz).filter_by(token=split[1]).one_or_none()
+        if quiz is None:
             ctx.bot.send_message(
                 chat_id=upd.effective_chat.id,
                 text='Опитування не знайдено 😢. Можливо, ви помилилися у коді або автор опитування його змінив.')
             return ConversationHandler.END
-        return start_quiz(upd, ctx, quiz_token.quiz)
+        return start_quiz(upd, ctx, quiz)
 
 
 def cmd_search(upd: Update, ctx: CallbackContext):
@@ -295,10 +288,12 @@ def answer_callback(upd: Update, ctx: CallbackContext):
                     query.edit_message_text(f'Результати тестування:\n'
                                             f'Унікальний код: {attempt.uuid}\n'
                                             f'Назва: {quiz.name}\n'
-                                            f'Код: {quiz.token}\n'
+                                            f'Код опитування: {quiz.token}\n'
                                             f'Час проходження: {(attempt.finished_on - attempt.started_on)}\n'
                                             f'Спроба №: {retry_number}\n'
-                                            f'Оцінка: {attempt.mark}/100\n')
+                                            f'Оцінка: {attempt.mark}/100\n'
+                                            f'Переглянути цю спробу можна надіславши боту команду:\n'
+                                            f'/show {attempt.uuid}')
                 else:
                     query.edit_message_text('Опитування пройдено, ваші відповіді успішно записано. Дякуємо за участь!')
             return ConversationHandler.END

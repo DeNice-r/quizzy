@@ -19,7 +19,6 @@ from db.models.Quiz import Quiz
 from db.models.QuizCategory import QuizCategory
 from db.models.QuizCategoryType import QuizCategoryType
 from db.models.QuizQuestion import QuizQuestion
-from db.models.QuizToken import QuizToken
 from db.models.User import User
 
 
@@ -379,15 +378,13 @@ def conv_nq_success_end(upd: Update, ctx: CallbackContext):
             for ans in que['wrong_answers']:
                 answer = QuestionAnswer(question.id, ans, False)
                 s.add(answer)
-        tok = QuizToken(quiz.id)
-        s.add(tok)
         ctx.bot \
             .send_message(
             chat_id=upd.effective_chat.id,
-            text=f'Опитування успішно створено! Код опитування - {tok.token}\nЙого можна знайти за '
-                 f'{"назвою або " if quiz.is_public else ""}цим кодом у пошуку (/search {tok.token}'
+            text=f'Опитування успішно створено! Код опитування - {quiz.token}\nЙого можна знайти за '
+                 f'{"назвою або " if quiz.is_public else ""}цим кодом у пошуку (/search {quiz.token}'
                  f'{" або /search " + quiz.name if quiz.is_public else ""}) або за допомогою команди '
-                 f'/pass {tok.token}. Цей код можна подивитися та змінити у меню опитування.')
+                 f'/pass {quiz.token}. Цей код можна подивитися та змінити у меню опитування.')
         user.clear_data()
     return ConversationHandler.END
 

@@ -16,7 +16,6 @@ from db.engine import db_session
 # Models
 from db.models.Quiz import Quiz
 from db.models.QuizQuestion import QuizQuestion
-from db.models.QuizToken import QuizToken
 from db.models.QuizCategory import QuizCategory
 from db.models.QuizCategoryType import QuizCategoryType
 from db.models.Attempt import Attempt
@@ -230,14 +229,13 @@ def get_quiz_info(quiz: Quiz | int):
     with db_session.begin() as s:
         if isinstance(quiz, int):
             quiz = s.get(Quiz, quiz)
-        tok: QuizToken = s.query(QuizToken).filter_by(quiz_id=quiz.id).one()
         cats = [x[0] for x in s.query(QuizCategory, QuizCategoryType).with_entities(QuizCategoryType.name).
             filter(QuizCategoryType.id == QuizCategory.category_id, QuizCategory.quiz_id == quiz.id).all()]
         attempt_count = s.query(Attempt).filter_by(quiz_id=quiz.id).count()
         session_count = s.query(Session).filter_by(quiz_id=quiz.id).count()
 
         return f'Опитування "{quiz.name}"\n' \
-               f'Токен для проходження: {tok.token}\n' \
+               f'Токен для проходження: {quiz.token}\n' \
                f'Кількість проходжень: {attempt_count}' \
                f'{f" (і ще {session_count} проходять прямо зараз)" if session_count > 0 else ""}\n' \
                f'Категорії: {", ".join(quiz.categories)}\n'
@@ -396,11 +394,8 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
         # quiz.questions[x]) for x in range(len(quiz.questions))])))
         case quiz_id, 'regenerate_token':
             with db_session.begin() as s:
-                old_token = s.query(QuizToken).filter_by(quiz_id=quiz_id).one_or_none()
-                s.delete(old_token)
-                s.flush()
-                new_token = QuizToken(quiz_id)
-                s.add(new_token)
+                quiz = s.query(Quiz).filter_by(quiz_id=quiz_id).one_or_none()
+                quiz.regenerate_token()
             query.edit_message_text(get_quiz_info(quiz_id), reply_markup=get_edit_quiz_keyboard(quiz_id))
             return MQ.EDIT
         case quiz_id, 'show_stats':

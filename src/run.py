@@ -9,7 +9,6 @@ import db.models.Quiz
 import db.models.QuizCategory
 import db.models.QuizCategoryType
 import db.models.QuizQuestion
-import db.models.QuizToken
 from db.models.Session import Session
 import db.models.SessionAnswer
 import db.models.User

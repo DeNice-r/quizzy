@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, ForeignKey, Integer, Float
+from sqlalchemy import Column, BigInteger, ForeignKey, Integer, UniqueConstraint, Numeric
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import ARRAY
 
@@ -29,5 +29,6 @@ class AttemptAnswer(BaseModel):
     attempt_id = Column(BigInteger, ForeignKey(Attempt.id, ondelete='CASCADE'), nullable=False)
     question_id = Column(Integer, ForeignKey(QuizQuestion.id, ondelete='CASCADE'), nullable=False)
     answer_ids = Column(ARRAY(BigInteger, as_tuple=ForeignKey(QuestionAnswer.id)), nullable=False)
-    mark = Column(Float, nullable=False, default=0)
+    UniqueConstraint(attempt_id, question_id, name='unique_attempt_answer')
+    mark = Column(Numeric, nullable=False, server_default='0')
     # answers = relationship('QuestionAnswer', primaryjoin='QuestionAnswer.id == any(AttemptAnswer.answer_ids)')

@@ -1,12 +1,12 @@
 import datetime
 
-from sqlalchemy import Column, BigInteger, ForeignKey, Integer, DateTime, Float
+from sqlalchemy import Column, BigInteger, ForeignKey, Integer, DateTime, Numeric
 from sqlalchemy.orm import relationship, backref
 
 from db.models.Quiz import Quiz
 from db.models.Session import Session
 from db.models.User import User
-from db.engine import BaseModel
+from db.engine import BaseModel, db_session
 
 
 class Attempt(BaseModel):
@@ -28,4 +28,4 @@ class Attempt(BaseModel):
     finished_on = Column(DateTime, default=datetime.datetime.now, nullable=False)
     answers = relationship('AttemptAnswer', backref=backref('attempt', lazy='select'),
                            cascade='all, delete, delete-orphan')
-    mark = Column(Float, nullable=True, default=0)
+    mark = Column(Numeric, nullable=True, server_default='0')

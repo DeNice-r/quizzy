@@ -17,6 +17,7 @@ from db.models.QuizToken import QuizToken
 from db.models.Session import Session
 from db.models.SessionAnswer import SessionAnswer
 from db.models.User import User
+from db.utils import update_mark
 
 # Misc.
 from enum import Enum
@@ -54,6 +55,41 @@ def get_current_markup(user_id: int):
                          InlineKeyboardButton('⇥', callback_data='end'),
                          ])
         return InlineKeyboardMarkup(keyboard)
+
+
+def get_search_data(user_id, term):
+    markup = None
+    with db_session.begin() as s:
+        user = s.get(User, user_id)
+        page = user.data['search']['page']
+        result_query = s.query(Quiz).filter(
+            and_(Quiz.is_available == True, and_(Quiz.is_public == True, Quiz.name.ilike(f'%{term}%'))))
+        result_count = result_query.count()
+        result = result_query.offset(user.data['search']['page'] * MAX_NUMBER).limit(MAX_NUMBER - (1 if page == 0 else 0)).all()
+        quiz = s.query(Quiz)\
+            .join(QuizToken, Quiz.id == QuizToken.quiz_id).\
+            filter(and_(QuizToken.token == term, Quiz.is_available == True)).one_or_none()
+        if quiz is not None and page == 0:
+            result.insert(0, quiz)
+            result_count += 1
+        message = f'За запитом "{term}" отримано результатів: {result_count} (натисніть для проходження тесту)'
+
+        keyboard = []
+
+        for x in result:
+            keyboard.append([InlineKeyboardButton(x.name, callback_data=x.id)])
+
+        if result_count == 0:
+            message = f'За запитом "{term}" не знайдено жодних результатів 😢'
+        else:
+            keyboard.append([InlineKeyboardButton('🚪/ ⇤', callback_data='start'),
+                             InlineKeyboardButton('←', callback_data='prev'),
+                             InlineKeyboardButton(f'{page + 1} ({page * ITEMS_PER_PAGE + 1}-{page * ITEMS_PER_PAGE + len(result)}/{result_count})', callback_data='stay'),
+                             InlineKeyboardButton('→', callback_data='next'),
+                             InlineKeyboardButton('⇥', callback_data='end'),
+                             ])
+            markup = InlineKeyboardMarkup(keyboard)
+        return message, markup
 
 
 def update_question(send_message, user_id: int, action: str):
@@ -193,34 +229,20 @@ def cmd_search(upd: Update, ctx: CallbackContext):
 
     term = ' '.join(split[1:])
     with db_session.begin() as s:
-        result: list = s.query(Quiz).filter(
-            and_(Quiz.is_available == True, and_(Quiz.is_public == True, Quiz.name.ilike(f'%{term}%')))).all()
-        quiz = s.query(Quiz)\
-            .join(QuizToken, Quiz.id == QuizToken.quiz_id).\
-            filter(and_(QuizToken.token == term, Quiz.is_available == True)).one_or_none()
-        if quiz is not None:
-            result.append(quiz)
-        if len(result) == 0:
-            ctx.bot.send_message(
-                chat_id=upd.effective_chat.id,
-                text=f'За запитом "{term}" не знайдено жодних результатів 😢')
-            return ConversationHandler.END
-        keyboard = []
-        for x in result:
-            keyboard.append([InlineKeyboardButton(x.name, callback_data=x.id)])
+        # TODO: удосконалити пошук:
+        # розбивати запит по пробілах і шукати всі збіги
 
-        keyboard.append([InlineKeyboardButton('⇤', callback_data='start'),
-                         InlineKeyboardButton('←', callback_data='prev'),
-                         InlineKeyboardButton(f'{1}', callback_data='stay'),
-                         InlineKeyboardButton('→', callback_data='next'),
-                         InlineKeyboardButton('⇥', callback_data='end'),
-                         ])
+        user = s.get(User, upd.effective_user.id)
+        user.set_data('search', {
+            'page': 0,
+        })
 
-        ctx.bot.send_message(
-            chat_id=upd.effective_chat.id,
-            text=f'За запитом "{term}" отримано результатів: {len(result)} (натисніть для проходження тесту)',
-            reply_markup=InlineKeyboardMarkup(keyboard))
-    return PQ.CHOOSE
+    message, markup = get_search_data(upd.effective_user.id, term)
+    ctx.bot.send_message(
+        chat_id=upd.effective_chat.id,
+        text=message,
+        reply_markup=markup)
+    return ConversationHandler.END if markup is None else PQ.CHOOSE
 
 
 def conv_pq_next_question(upd: Update, ctx: CallbackContext):
@@ -261,32 +283,15 @@ def answer_callback(upd: Update, ctx: CallbackContext):
         query.edit_message_reply_markup(get_current_markup(upd.effective_user.id))
     else:
         user_id = upd.effective_user.id
-        if not update_question(query.edit_message_text, user_id, action):  # !!!
+        if not update_question(query.edit_message_text, user_id, action):
             with db_session.begin() as s:
-                attempt = s.get(Attempt, session_to_attempt(user_id))
+                attempt_id = session_to_attempt(user_id)
+                update_mark(attempt_id)
+                attempt = s.get(Attempt, attempt_id)
+                retry_number = s.query(Attempt).filter_by(user_id=user_id, quiz_id=attempt.quiz_id).count()
                 quiz = s.get(Quiz, attempt.quiz_id)
                 if not quiz.is_statistical:
                     query.edit_message_text(f'Обрахування результатів тестування...')
-                    retry_number = s.query(Attempt).filter_by(user_id=user_id, quiz_id=quiz.id).count()
-                    questions = s.query(QuizQuestion).filter_by(quiz_id=quiz.id).all()
-
-                    attempt_mark = 0
-                    for que in questions:
-                        q = s.query(QuestionAnswer).filter_by(question_id=que.id, is_right=True)
-                        right_answers: list = [x.id for x in q.all()]
-                        weight = 1 / len(right_answers)
-                        attempt_answer = s.query(AttemptAnswer).filter_by(attempt_id=attempt.id,
-                                                                          question_id=que.id).one_or_none()
-                        if attempt_answer is None:
-                            continue
-                        answered_correctly = list(filter(lambda x: x in right_answers, attempt_answer.answer_ids))
-
-                        temp = len(answered_correctly) - (len(attempt_answer.answer_ids) - len(answered_correctly))
-
-                        attempt_answer.mark = round(temp * weight if temp > 0 else 0, 2)
-                        attempt_mark += attempt_answer.mark
-                        s.flush()
-                    attempt.mark = round(attempt_mark / len(questions) * 100, 2)
                     query.edit_message_text(f'Результати тестування:\n'
                                             f'Назва: {quiz.name}\n'
                                             f'Код: {quiz.token}\n'
@@ -302,34 +307,37 @@ def choose_callback(upd: Update, ctx: CallbackContext):
     query = upd.callback_query
     action = query.data
     query.answer()
-    # TODO: pagination
-    match action:
-        case 1:
-            pass
-        # case 'start':
-        #     if current_session.question_number == 0:
-        #         return True
-        #     current_session.question_number = 0
-        # case 'prev':
-        #     if current_session.question_number > 0:
-        #         current_session.question_number -= 1
-        #     else:
-        #         return True
-        # case 'next':
-        #     if current_session.question_number < user.data['pass']['question_count'] - 1:
-        #         current_session.question_number += 1
-        #     else:
-        #         return True
-        # case 'end':
-        #     if current_session.question_number == user.data['pass']['question_count'] - 1:
-        #         return True
-        #     current_session.question_number = user.data['pass']['question_count'] - 1
-    if action.isnumeric():
-        action = int(action)
-        with db_session.begin() as s:
-            quiz = s.get(Quiz, action)
-            query.edit_message_text(f'Обрано тестування "{quiz.name}".')
-            return start_quiz(upd, ctx, quiz)
+    with db_session.begin() as s:
+        user = s.get(User, upd.effective_user.id)
+        match action:
+            case 'stay':
+                return
+            case 'start':
+                if user.data['search']['page'] == 0:
+                    query.delete_message()
+                    return ConversationHandler.END
+                user.data['search']['page'] = 0
+            case 'prev':
+                if user.data['search']['page'] > 0:
+                    user.data['search']['page'] -= 1
+                else:
+                    return
+            case 'next':
+                if user.data['search']['page'] < user.data['pass']['question_count'] - 1:
+                    user.data['search']['page'] += 1
+                else:
+                    return
+            case 'end':
+                if user.data['search']['page'] == user.data['pass']['question_count'] - 1:
+                    return
+                user.data['search']['page'] = user.data['pass']['question_count'] - 1
+            case _:
+                if action.isnumeric():
+                    action = int(action)
+                    quiz = s.get(Quiz, action)
+                    query.edit_message_text(f'Обрано тестування "{quiz.name}".')
+                    return start_quiz(upd, ctx, quiz)
+        user.flag_data()
     return PQ.CHOOSE
 
 
@@ -353,6 +361,5 @@ dispatcher.add_handler(ConversationHandler(
             CallbackQueryHandler(answer_callback),
         ],
     },
-    # TODO: удосконалити механізм виходу з опитування?
     fallbacks=[CommandHandler('cancel', conv_pq_cancel), ],
 ))

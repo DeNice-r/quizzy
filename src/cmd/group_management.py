@@ -80,7 +80,6 @@ def conv_mg_choice(upd: Update, ctx: CallbackContext):
 
 
 def conv_mg_cancel(upd: Update, ctx: CallbackContext):
-    # TODO: better handling
     return ConversationHandler.END
 
 

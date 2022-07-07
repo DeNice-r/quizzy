@@ -32,19 +32,6 @@ if __name__ == '__main__':
     with db_session.begin() as s:
         if s.query(Session).first() is not None:
             s.query(Session).delete()
-
         # s.execute(text("""SELECT pg_switch_wal();"""))
-
-    # mock?
-    try:
-        with db_session.begin() as s:
-            new_user = db.models.User.User(408526329)
-            s.add(new_user)
-    except:
-        pass
-
-    # TODO: create mock data
-
-
     updater.start_polling()
     updater.idle()

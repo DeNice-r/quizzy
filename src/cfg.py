@@ -15,13 +15,15 @@ load_dotenv()
 
 logging.basicConfig(format='[%(asctime)s]=>%(levelname)s] %(name)s: %(message)s', level=logging.INFO)
 
+# consts
 BOT_NAME = os.environ['BOT_NAME']
 
 GOOD_SIGN = '♥'  # os.environ['GOOD_SIGN']
 BAD_SIGN = '🖤'  # os.environ['BAD_SIGN']
 
-# consts
-MAX_CATEGORY_NUMBER = 10
+MAX_NUMBER = 9
+ITEMS_PER_PAGE = 9
+palette = ['#E50000', '#FF8D00', '#FFEE00', '#008121', '#004CFF', '#760188']
 
 # re's
 __RAW_RE_SHORT_TEXT = r'[a-zа-яёіїєґ\-_,\.+=<>()*&^%#@!?\/\\\[\]0-9\'" ]{1,50}'

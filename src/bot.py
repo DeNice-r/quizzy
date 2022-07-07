@@ -1,9 +1,11 @@
+import io
+import random
 
 from cfg import *
 from db.models.User import User
 
 # Telegram API
-from telegram import Update
+from telegram import Update, InputMediaPhoto
 from telegram.ext import CommandHandler, CallbackContext
 
 # DB API
@@ -17,18 +19,18 @@ def cmd_start(upd: Update, ctx: CallbackContext):
         Записуємо дані про нового (?) користувача в бд
         відображуємо йому підказки щодо роботи з ботом,
     """
-    msg = f'Ви успішно авторизувалися у {bot_name}.'
+    msg = f'Ви успішно авторизувалися у {BOT_NAME}.'
     try:
         with db_session.begin() as s:
             new_user = User(upd.effective_user.id)
             s.add(new_user)
     except IntegrityError as e:
-        msg = f'Ви вже авторизовані у {bot_name}!'
+        msg = f'Ви вже авторизовані у {BOT_NAME}!'
 
     ctx.bot.send_message(chat_id=upd.effective_chat.id, text=msg)
 
 
-# # System API for backup
+# System API for backup
 # import datetime
 # from subprocess import Popen
 # def cmd_backup(upd: Update, ctx: CallbackContext):
@@ -79,4 +81,3 @@ def cmd_start(upd: Update, ctx: CallbackContext):
 
 
 dispatcher.add_handler(CommandHandler('start', cmd_start))
-

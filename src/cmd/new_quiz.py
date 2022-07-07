@@ -131,9 +131,9 @@ def conv_nq_cat(upd: Update, ctx: CallbackContext):
                                      text=f'Цю категорію вже додано. Ви можете проглянути додані категорії за '
                                           f'допомогою команди /show.')
                 return NQ.NEW_CATEGORY
-            if len(cat_ref) >= MAX_CATEGORY_NUMBER:
+            if len(cat_ref) >= MAX_NUMBER:
                 ctx.bot.send_message(chat_id=upd.effective_chat.id,
-                                     text=f'Нажаль, не можна додати більше {MAX_CATEGORY_NUMBER} категорій. Ви можете '
+                                     text=f'Нажаль, не можна додати більше {MAX_NUMBER} категорій. Ви можете '
                                           f'переглянути додані категорії та видалити їх за допомогою команди /show')
                 return NQ.NEW_CATEGORY
 
@@ -266,12 +266,12 @@ def conv_nq_que_right_ans(upd: Update, ctx: CallbackContext):
                          f'{"" if is_stat else "вірну "}відповідь додано! Введіть наступну відповідь' +
                          ("" if new_len < 2 else (" або введіть /done для переходу до " +
                                                   (
-                                                      "наступного запитання" if is_stat else "невірних відповідей"))) + '.')
+                                                      "наступного запитання" if is_stat else "не вірних відповідей"))) + '.')
                 return NQ.QUE_ANS_RIGHT
             else:
                 ctx.bot.send_message(
                     chat_id=upd.effective_chat.id,
-                    text=f'{choice(["Супер", "Чудово", "Блискуче"])}, Вірну відповідь додано. Тепер вводьте невірні '
+                    text=f'{choice(["Супер", "Чудово", "Блискуче"])}, Вірну відповідь додано. Тепер вводьте не вірні '
                          'відповіді:')
                 return NQ.QUE_ANS
     else:
@@ -286,18 +286,24 @@ def conv_nq_que_right_ans_done(upd: Update, ctx: CallbackContext):
         que_ref = user.data['new_quiz']['questions'][-1]
         if len(que_ref['right_answers']) < 2:
             if quiz_ref['is_statistical']:
-                ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повинно бути бодай 2 відповіді.")
+                ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повинно бути принаймні 2 відповіді.")
             elif que_ref['is_multi']:
-                ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повинна бути бодай 2 вірних відповіді.")
+                ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повинна бути принаймні 2 вірних відповіді.")
             elif len(que_ref['right_answers']) < 1:
-                ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повинна бути бодай 1 вірна відповідь.")
+                ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повинна бути принаймні 1 вірна відповідь.")
             else:
                 ctx.bot.send_message(chat_id=upd.effective_chat.id,
                                      text=f'{choice(["Супер", "Чудово", "Блискуче"])}, всі вірні відповіді додано. '
-                                          f'Тепер вводьте невірні.')
+                                          f'Тепер вводьте не вірні.')
                 return NQ.QUE_ANS
             return NQ.QUE_ANS_RIGHT
-        # TODO: too silent :(
+        if quiz_ref['is_statistical']:
+            ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                                 text=f'Запитання успішно створено. Тепер введіть наступне запитання:')
+        else:
+            ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                                 text=f'{choice(["Супер", "Чудово", "Блискуче"])}, всі вірні відповіді додано. '
+                                      f'Тепер вводьте не вірні.')
         return NQ.QUE if quiz_ref['is_statistical'] else NQ.QUE_ANS
 
 
@@ -305,10 +311,18 @@ def conv_nq_que_ans(upd: Update, ctx: CallbackContext):
     if RE_MED_TEXT.fullmatch(upd.message.text):
         with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
+            answer_count = len(user.data['new_quiz']['questions'][-1]['wrong_answers']) +\
+                           len(user.data['new_quiz']['questions'][-1]['right_answers'])
+            if answer_count > MAX_NUMBER - 1:
+                ctx.bot.send_message(
+                    chat_id=upd.effective_chat.id,
+                    text=f'Нажаль, більше 9 відповідей бути не може 😢. Для переходу на наступний етап відправте '
+                         f'/done.')
+                return
             user.data['new_quiz']['questions'][-1]['wrong_answers'].append(upd.message.text)
             user.flag_data()
         ctx.bot.send_message(chat_id=upd.effective_chat.id, text=f"{choice(['Супер', 'Чудово', 'Блискуче'])}, "
-                                                                 "невірну відповідь додано! Вводьте далі, або "
+                                                                 "не вірну відповідь додано! Вводьте далі, або "
                                                                  "введіть /next для переходу до наступного запитання.")
     else:
         ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повідомлення містить недопустимі символи або занадто "
@@ -370,8 +384,8 @@ def conv_nq_success_end(upd: Update, ctx: CallbackContext):
         ctx.bot \
             .send_message(
             chat_id=upd.effective_chat.id,
-            text=f'Опитування успішно створено! Код опитування - {tok.token}\nЙого можна знайти за'
-                 f' {"назвою або " if quiz.is_public else ""}цим кодом у пошуку (/search {tok.token}'
+            text=f'Опитування успішно створено! Код опитування - {tok.token}\nЙого можна знайти за '
+                 f'{"назвою або " if quiz.is_public else ""}цим кодом у пошуку (/search {tok.token}'
                  f'{" або /search " + quiz.name if quiz.is_public else ""}) або за допомогою команди '
                  f'/pass {tok.token}. Цей код можна подивитися та змінити у меню опитування.')
         user.clear_data()
@@ -387,7 +401,6 @@ def conv_nq_cancel(upd: Update, ctx: CallbackContext):
     return ConversationHandler.END
 
 
-# TODO: TEEEEEEEEEEEEEEEST
 # Створення нового опитування.
 dispatcher.add_handler(ConversationHandler(
     entry_points=[CommandHandler('new_quiz', cmd_new_quiz)],

@@ -1,5 +1,8 @@
 # Bot
 import math
+import secrets
+from idlelib.query import Query
+from random import choice
 
 from bot import *
 
@@ -20,32 +23,43 @@ from db.models.Attempt import Attempt
 from db.models.Session import Session
 from db.models.QuestionAnswer import QuestionAnswer
 
+
+# Plotting API
+import matplotlib
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+import matplotlib.pyplot as plt
+matplotlib.use('agg')
+
 # Misc.
 from enum import Enum
 
 
-# TODO: нищівне і повне тестування всього нового функціонування
 class MQ(Enum):
     SHOW, EDIT, RENAME, QUESTION_MODE, QUESTION_EDIT, QUESTION_EDIT_MODE, ANSWER_MODE, ANSWER_EDIT_MODE, ANSWER_DELETE,\
-        ANSWER_EDIT, QUESTION_DELETE, DELETE, CAT_MODE, BACK_TO = range(14)
-
-
-items_per_page = 9
+        ANSWER_EDIT, QUE_IS_MULTI, QUE_ANS_RIGHT, QUE_ANS, ADD_ANS, STATS, QUESTION_DELETE, DELETE, CAT_MODE, \
+        BACK_TO = range(19)
 
 
 def get_all_quizzes_keyboard(user_id: int):
-    # TODO: "ви ще не створити опитувань("
-    # TODO: "cancel щоб вийти із цього меню" **
     with db_session.begin() as s:
-        quizzes = s.query(Quiz).filter_by(author_id=user_id).all()
+        user = s.get(User, user_id)
+        page = user.data['my_quizzes']['page']
+        quizzes = s.query(Quiz.name, Quiz.id).filter_by(author_id=user_id).offset(page * ITEMS_PER_PAGE).limit(ITEMS_PER_PAGE).all()
+        quiz_count = s.query(Quiz).filter_by(author_id=user_id).count()
+
         keyboard = []
-        for q_idx in range(0, len(quizzes), 2):
+        for quiz in quizzes:
             keyboard.append([
-                InlineKeyboardButton(quizzes[q_idx].name, callback_data=str(quizzes[q_idx].id)),
+                InlineKeyboardButton(quiz[0], callback_data=str(quiz[1])),
             ])
-            if q_idx + 1 < len(quizzes):
-                keyboard[-1].append(
-                    InlineKeyboardButton(quizzes[q_idx + 1].name, callback_data=str(quizzes[q_idx + 1].id)))
+        keyboard.append([InlineKeyboardButton('🚪/ ⇤', callback_data='start'),
+                         InlineKeyboardButton('←', callback_data='prev'),
+                         InlineKeyboardButton(
+                             f'{page + 1} ({page * ITEMS_PER_PAGE + 1}-{page * ITEMS_PER_PAGE + len(quizzes)}/{quiz_count})',
+                             callback_data='stay'),
+                         InlineKeyboardButton('→', callback_data='next'),
+                         InlineKeyboardButton('⇥', callback_data='end'),
+                         ])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -74,7 +88,7 @@ def get_edit_quiz_keyboard(quiz: Quiz | int):
                 InlineKeyboardButton('Видалити опитування', callback_data=f'{quiz.id}.delete'),
             ],
             [
-                InlineKeyboardButton('🚪 Назад до списку опитувань', callback_data=f'{quiz.id}.back'),
+                InlineKeyboardButton('🚪 Назад до списку опитувань', callback_data=f'{quiz.id}.quiz_list'),
             ],
         ])
 
@@ -101,6 +115,7 @@ def get_cat_keyboard(quiz_id: int, cat_id_to_remove: int = None):
         cats = s.query(QuizCategory).filter_by(quiz_id=quiz_id).all()
         for x in range(len(cats)):
             keyboard.append([InlineKeyboardButton(quiz.categories[x], callback_data=str(cats[x].id))])
+        keyboard.append([InlineKeyboardButton('🚪 Назад', callback_data='quiz')])
         return InlineKeyboardMarkup(keyboard)
 
 
@@ -110,10 +125,10 @@ def get_question_mode_keyboard(user: User | int):
         if isinstance(user, int):
             user = s.get(User, user)
 
-        quiz_id = user.data['question_mode']['quiz_id']
+        quiz_id = user.data['quiz_mode']['quiz_id']
         page = user.data['question_mode']['page']
         question_query = s.query(QuizQuestion).filter_by(quiz_id=quiz_id)
-        questions = question_query.offset(page * items_per_page).limit(items_per_page).all()
+        questions = question_query.offset(page * ITEMS_PER_PAGE).limit(ITEMS_PER_PAGE).all()
         question_num = question_query.count()
         for que in questions:
             keyboard.append([InlineKeyboardButton(que.question, callback_data=que.id)])
@@ -121,7 +136,7 @@ def get_question_mode_keyboard(user: User | int):
         keyboard.append([InlineKeyboardButton('🚪/ ⇤', callback_data='start'),
                          InlineKeyboardButton('←', callback_data='prev'),
                          InlineKeyboardButton(
-                             f'{page + 1} ({page * 9 + 1}-{page * 9 + len(questions)}/{question_num})',
+                             f'{page + 1} ({page * ITEMS_PER_PAGE + 1}-{page * ITEMS_PER_PAGE + len(questions)}/{question_num})',
                              callback_data='stay'),
                          InlineKeyboardButton('→', callback_data='next'),
                          InlineKeyboardButton('⇥', callback_data='end'),
@@ -195,6 +210,22 @@ def get_exact_answer_keyboard(answer: QuestionAnswer | int):
         return InlineKeyboardMarkup(keyboard)
 
 
+def get_stats_keyboard():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('Статистика відповідей', 'answers'),
+        ],
+        [
+            InlineKeyboardButton('Статистика відповідей'),
+        ],
+        [
+            InlineKeyboardButton('🚪 Назад'),
+            # send_statistics(upd, ctx, quiz_id)
+        ],
+
+    ])
+
+
 def get_quiz_info(quiz: Quiz | int):
     with db_session.begin() as s:
         if isinstance(quiz, int):
@@ -213,22 +244,113 @@ def get_quiz_info(quiz: Quiz | int):
         # TODO: to be continued...
 
 
+def send_statistics(upd, ctx, quiz_id):
+    images = []
+    with db_session.begin() as s:
+        titles = [x[0] for x in s.query(QuizQuestion.question).filter_by(quiz_id=quiz_id).all()]
+        question_ids = s.query(QuizQuestion.id).filter_by(quiz_id=quiz_id).all()
+
+        for que_id_index in range(len(question_ids)):
+            que_id = question_ids[que_id_index][0]
+            title = titles[que_id_index]
+            labels = [x[0] for x in s.query(QuestionAnswer.answer).filter_by(question_id=que_id).all()]
+            answer_ids = [x[0] for x in s.query(QuestionAnswer.id).filter_by(question_id=que_id).all()]
+            stmt = text(
+                "SELECT question_answer.answer, COUNT(question_answer.id) \n"
+                "FROM question_answer \n"
+                "INNER JOIN attempt_answer aa on question_answer.id=ANY(aa.answer_ids) \n"
+                "WHERE question_answer.id = ANY(:ans_ids) \n"
+                "GROUP BY question_answer.id \n")
+
+            counts = s.execute(stmt, {'ans_ids': answer_ids}).all()
+            if len(counts) < 1:
+                continue
+
+            local_palette = palette[:len(counts)]
+            while len(local_palette) > len(counts):
+                local_palette.extend(palette[:len(counts) - len(local_palette)])
+
+            fig, ax = plt.subplots()
+            ax.pie([x[1] for x in counts],
+                   labels=[(x[0] if len(x[0]) < 30 else x[0][:27] + '...') for x in counts],
+                   radius=5,
+                   center=(10, 10),
+                   autopct='%1.1f%%',
+                   explode=[.08 for x in range(len(counts))],
+                   colors=local_palette,
+                   # wedgeprops={"linewidth": 1, "edgecolor": "white"},
+                   shadow=True)
+            ax.axis('equal')
+            plt.text(-2.3, 16.5, str(que_id_index + 1) + '. ' + (title if len(title) < 50 else title[:47] + '...'), fontsize=18, fontweight='bold')
+            # plt.tight_layout()
+            fig.set_size_inches(12, 7)
+            out = io.BytesIO()
+            FigureCanvas(fig).print_png(out)
+            out.seek(0)
+            images.append(InputMediaPhoto(out))
+    if len(images) > 1:
+        while len(images) > 1:
+            ctx.bot.send_media_group(upd.effective_chat.id, images[:10])
+            images = images[10:]
+    if len(images) == 1:
+        ctx.bot.send_photo(upd.effective_chat.id, images[0].media)
+
+
 def cmd_my_quizzes(upd: Update, ctx: CallbackContext):
+    with db_session.begin() as s:
+        user = s.get(User, upd.effective_user.id)
+        user.set_data('my_quizzes', {
+            'page': 0,
+        })
     ctx.bot.send_message(chat_id=upd.effective_chat.id,
                          text=f'Оберіть опитування:',
                          reply_markup=get_all_quizzes_keyboard(upd.effective_user.id))
+
     return MQ.SHOW
 
 
 def quiz_menu(upd: Update, ctx: CallbackContext):
     query = upd.callback_query
     query.answer()
-    action = int(query.data.split('.')[0])
+    action = query.data
     with db_session.begin() as s:
-        quiz = s.get(Quiz, action)
-        query.edit_message_text(
-            text=get_quiz_info(quiz),
-            reply_markup=get_edit_quiz_keyboard(quiz))
+        user = s.get(User, upd.effective_user.id)
+        page = user.data['my_quizzes']['page']
+        page_count = math.ceil(s.query(Quiz).filter_by(author_id=user.id).count() / ITEMS_PER_PAGE)
+        match action:
+            case 'stay':
+                return
+            case 'start':
+                if page == 0:
+                    quiz = s.get(Quiz, user.data['quiz_mode']['quiz_id'])
+                    query.delete_message()
+                    return ConversationHandler.END
+                user.data['question_mode']['page'] = 0
+            case 'prev':
+                if page > 0:
+                    user.data['question_mode']['page'] -= 1
+                else:
+                    return
+            case 'next':
+                if page < page_count - 1:
+                    user.data['question_mode']['page'] += 1
+                else:
+                    return
+            case 'end':
+                if page == page_count - 1:
+                    return
+                user.data['question_mode']['page'] += 1
+            case _:
+                if action.isnumeric():
+                    quiz = s.get(Quiz, action)
+                    user.set_data('quiz_mode', {
+                        'quiz_id': quiz.id,
+                        'message_id': query.message.message_id,
+                    })
+                    query.edit_message_text(
+                        text=get_quiz_info(quiz),
+                        reply_markup=get_edit_quiz_keyboard(quiz))
+        user.flag_data()
     return MQ.EDIT
 
 
@@ -243,11 +365,11 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
                 user = s.get(User, upd.effective_user.id)
                 user.set_data('rename_quiz_id', quiz_id)
 
-            ctx.bot.send_message(
-                chat_id=upd.effective_chat.id,
-                text=f'Введіть нову назву для свого опитування:')
+            query.edit_message_text(
+                text=f'Введіть нову назву для свого опитування:',
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton('Назад', callback_data=f'{quiz_id}.quiz')]]))
             return MQ.RENAME
-
         case quiz_id, 'privacy':
             with db_session.begin() as s:
                 quiz = s.get(Quiz, quiz_id)
@@ -255,7 +377,6 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
                 s.flush()
                 query.edit_message_reply_markup(get_edit_quiz_keyboard(quiz))
             return MQ.EDIT
-
         case quiz_id, 'availability':
             with db_session.begin() as s:
                 quiz = s.get(Quiz, quiz_id)
@@ -265,15 +386,10 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
             return MQ.EDIT
         case quiz_id, 'cat_mode':
             query.edit_message_text('Режим редагування категорій. Надішліть назву категорії щоб її додати або '
-                                    'натисніть на категорію під цим повідомленням щоб її видалити. Для виходу з цього '
-                                    'режиму надішліть /leave.',
+                                    'натисніть на категорію під цим повідомленням щоб її видалити.',
                                     reply_markup=get_cat_keyboard(quiz_id))
             with db_session.begin() as s:
                 user = s.get(User, upd.effective_user.id)
-                user.set_data('cat_mode', {
-                    'quiz_id': quiz_id,
-                    'message_id': query.message.message_id,
-                })
             return MQ.CAT_MODE
         # case quiz_id, 'show_questions': with db_session.begin() as s: quiz = s.get(Quiz, quiz_id)
         # ctx.bot.send_message( chat_id=upd.effective_chat.id, text=str('\n\n'.join([f'{x + 1}. ' + str(
@@ -288,18 +404,20 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
             query.edit_message_text(get_quiz_info(quiz_id), reply_markup=get_edit_quiz_keyboard(quiz_id))
             return MQ.EDIT
         case quiz_id, 'show_stats':
-            # TODO
             raise NotImplemented
+            query.edit_message_text('Оберіть тип статистики, яку хочете переглянути:',
+                                    reply_markup=get_stats_keyboard(quiz_id))
+            send_statistics(upd, ctx, quiz_id)
+
+            return MQ.STATS
         case quiz_id, 'question_mode':
             with db_session.begin() as s:
                 user = s.get(User, upd.effective_user.id)
-                page_count = s.query(QuizQuestion).filter_by(quiz_id=quiz_id).count()
                 user.set_data('question_mode', {
-                    'quiz_id': quiz_id,
                     'page': 0,
-                    'page_count': math.ceil(page_count / items_per_page)
                 })
-            query.edit_message_text('Оберіть запитання, яке хочете змінити:',
+            query.edit_message_text('Оберіть запитання, яке хочете змінити або введіть нове, щоб почати створення '
+                                    'нового запитання:',
                                     reply_markup=get_question_mode_keyboard(upd.effective_user.id))
             return MQ.QUESTION_MODE
         case quiz_id, 'delete':
@@ -310,7 +428,7 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
                                             [[InlineKeyboardButton('Так', callback_data=f'{quiz_id}.yes'),
                                               InlineKeyboardButton('Ні', callback_data=f'{quiz_id}.no')]]))
                 return MQ.DELETE
-        case quiz_id, 'back':
+        case quiz_id, 'quiz_list':
             query.edit_message_text('Оберіть опитування:',
                                     reply_markup=get_all_quizzes_keyboard(upd.effective_user.id))
             return MQ.SHOW
@@ -324,11 +442,12 @@ def rename(upd: Update, ctx: CallbackContext):
             quiz = s.get(Quiz, user.data['rename_quiz_id'])
             quiz.name = name
 
-            ctx.bot.send_message(
+            msg = ctx.bot.send_message(
                 chat_id=upd.effective_chat.id,
                 text=f'Назву успішно змінено!',
                 reply_markup=get_back_to_keyboard(user.id, quiz.id))
-
+            user.data['quiz_mode']['message_id'] = msg.message_id
+            user.flag_data()
         return MQ.BACK_TO
     else:
         ctx.bot.send_message(chat_id=upd.effective_chat.id,
@@ -343,13 +462,13 @@ def question_mode(upd: Update, ctx: CallbackContext):
     with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
         page = user.data['question_mode']['page']
-        page_count = user.data['question_mode']['page_count']
+        page_count = math.ceil(s.query(QuizQuestion).filter_by(quiz_id=user.data['quiz_mode']['quiz_id']).count() / ITEMS_PER_PAGE)
         match action:
             case 'stay':
                 return
             case 'start':
                 if page == 0:
-                    quiz = s.get(Quiz, user.data['question_mode']['quiz_id'])
+                    quiz = s.get(Quiz, user.data['quiz_mode']['quiz_id'])
                     query.edit_message_text(get_quiz_info(quiz),
                                             reply_markup=get_edit_quiz_keyboard(quiz))
                     return MQ.EDIT
@@ -427,11 +546,13 @@ def question_edit(upd: Update, ctx: CallbackContext):
             user = s.get(User, upd.effective_user.id)
             question = s.get(QuizQuestion, user.data['question_mode']['question_id'])
             question.question = question_text
-            ctx.bot.send_message(
+            msg = ctx.bot.send_message(
                 chat_id=upd.effective_chat.id,
                 text="Запитання успішно змінено!",
                 reply_markup=InlineKeyboardMarkup(
                              [[InlineKeyboardButton('Назад', callback_data=f'{question.id}.question_edit_mode')]]))
+            user.data['quiz_mode']['message_id'] = msg.message_id
+            user.flag_data()
     else:
         ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повідомлення містить недопустимі символи або занадто "
                                                                  "довге :(")
@@ -470,7 +591,7 @@ def answer_mode(upd: Update, ctx: CallbackContext):
                 answer: QuestionAnswer = s.get(QuestionAnswer, answer_id)
                 query.edit_message_text(
                     f'Ви впевнені, що хочете видалити відповідь '
-                    f'"{GOOD_SIGN if answer.is_right else BAD_SIGN + answer.answer}"?\n',
+                    f'"{GOOD_SIGN if answer.is_right else BAD_SIGN} {answer.answer}"?\n',
                     reply_markup=InlineKeyboardMarkup(
                         [[InlineKeyboardButton('Так', callback_data=f'{answer_id}.yes'),
                           InlineKeyboardButton('Ні', callback_data=f'{answer_id}.no')]]))
@@ -514,10 +635,12 @@ def answer_edit(upd: Update, ctx: CallbackContext):
             user = s.get(User, upd.effective_user.id)
             answer = s.get(QuestionAnswer, user.data['question_mode']['answer_id'])
             answer.answer = answer_text
-            ctx.bot.send_message(chat_id=upd.effective_chat.id,
+            msg = ctx.bot.send_message(chat_id=upd.effective_chat.id,
                                  text="Відповідь успішно змінено!",
                                  reply_markup=InlineKeyboardMarkup(
                                      [[InlineKeyboardButton('Назад', callback_data=f'{answer.id}.answer_edit_mode')]]))
+            user.data['quiz_mode']['message_id'] = msg.message_id
+            user.flag_data()
             return MQ.BACK_TO
     else:
         ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повідомлення містить недопустимі символи або занадто "
@@ -551,10 +674,262 @@ def answer_delete(upd: Update, ctx: CallbackContext):
         user = s.get(User, upd.effective_user.id)
         query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton('🚪 Повернутися до списку відповідей',
-                                 callback_data=f'{user.data["question_mode"]["quiz_id"]}.answer_edit_mode')
+                                 callback_data=f'{user.data["quiz_mode"]["quiz_id"]}.answer_edit_mode')
         ]]))
     query.answer()
     return ret_value
+
+
+def add_question(upd: Update, ctx: CallbackContext):
+    if RE_MED_TEXT.fullmatch(upd.message.text):
+        with db_session.begin() as s:
+            user = s.get(User, upd.effective_user.id)
+            user.set_data('new_question', {
+                'question': upd.message.text,
+                'right_answers': [],
+                'wrong_answers': [],
+                'is_multi': False,
+            })
+            user.flag_data()
+        ctx.bot.send_message(
+            chat_id=upd.effective_chat.id,
+            text=f'{choice(["Чудове", "Гарне", "Класне"])} запитання! Тепер оберіть тип запитання по кількості '
+                 'відповідей (неможливо змінити):',
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton('Одна відповідь', callback_data='False')],
+                 [InlineKeyboardButton('Кілька відповідей', callback_data='True')]]))
+        return MQ.QUE_IS_MULTI
+    else:
+        ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повідомлення містить недопустимі символи або занадто "
+                                                                 "довге :(")
+        return MQ.QUESTION_MODE
+
+
+def add_question_is_multi(upd: Update, ctx: CallbackContext):
+    query = upd.callback_query
+    query.answer()
+    is_multi = eval(query.data)
+    with db_session.begin() as s:
+        user = s.get(User, upd.effective_user.id)
+        user.data['new_question']['is_multi'] = is_multi
+        user.flag_data()
+        is_stat = s.get(Quiz, user.data['quiz_mode']['quiz_id']).is_statistical
+        txt = f'Обрано тип запитання: {"кілька відповідей" if is_multi else "одна відповідь"}.\nТепер '
+        if is_stat:
+            if is_multi:
+                txt += 'надсилайте відповіді'
+            else:
+                txt += 'надішліть відповідь'
+        elif is_multi:
+            txt += 'надсилайте вірні відповіді'
+        else:
+            txt += 'надішліть вірну відповідь'
+
+        query.edit_message_text(txt + ':')
+    return MQ.QUE_ANS_RIGHT
+
+
+def add_question_right_ans(upd: Update, ctx: CallbackContext):
+    if RE_MED_TEXT.fullmatch(upd.message.text):
+        with db_session.begin() as s:
+            user = s.get(User, upd.effective_user.id)
+            is_stat = s.get(Quiz, user.data['quiz_mode']['quiz_id']).is_statistical
+            is_multi = user.data['new_question']['is_multi']
+            right_answer_count = len(user.data['new_question']['right_answers'])
+            if is_stat and right_answer_count > MAX_NUMBER - 1:
+                ctx.bot.send_message(
+                    chat_id=upd.effective_chat.id,
+                    text=f'Нажаль, більше {MAX_NUMBER} відповідей бути не може 😢. Для переходу на наступний етап відправте '
+                         f'/done.')
+                return
+            if is_multi and right_answer_count > MAX_NUMBER - 2:
+                if not is_stat:
+                    ctx.bot.send_message(
+                        chat_id=upd.effective_chat.id,
+                        text=f'Нажаль, більше {MAX_NUMBER - 1} вірних відповідей бути не може 😢. Для переходу на наступний етап '
+                             f'відправте /done.')
+                return
+            user.data['new_question']['right_answers'].append(upd.message.text)
+            user.flag_data()
+            new_len = len(user.data['new_question']['right_answers'])
+            if is_stat or is_multi:
+                ctx.bot.send_message(
+                    chat_id=upd.effective_chat.id,
+                    text=f'{choice(["Супер", "Чудово", "Блискуче"])}, '
+                         f'{"" if is_stat else "вірну "}відповідь додано! Введіть наступну відповідь' +
+                         ("" if new_len < 2 else (" або введіть /done для переходу до " +
+                                                  (
+                                                      "наступного запитання" if is_stat else "не вірних відповідей"))) + '.')
+                return MQ.QUE_ANS_RIGHT
+            else:
+                ctx.bot.send_message(
+                    chat_id=upd.effective_chat.id,
+                    text=f'{choice(["Супер", "Чудово", "Блискуче"])}, Вірну відповідь додано. Тепер вводьте не вірні '
+                         'відповіді:')
+                return MQ.QUE_ANS
+    else:
+        ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повідомлення містить недопустимі символи або занадто "
+                                                                 "довге :(")
+
+
+def add_question_right_ans_done(upd: Update, ctx: CallbackContext):
+    with db_session.begin() as s:
+        user = s.get(User, upd.effective_user.id)
+        is_stat = s.get(Quiz, user.data['quiz_mode']['quiz_id']).is_statistical
+        que_ref = user.data['new_question']
+        if len(que_ref['right_answers']) < 2:
+            if is_stat:
+                ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повинно бути принаймні 2 відповіді.")
+            elif que_ref['is_multi']:
+                ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повинна бути принаймні 2 вірних відповіді.")
+            elif len(que_ref['right_answers']) < 1:
+                ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повинна бути принаймні 1 вірна відповідь.")
+            else:
+                ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                                     text=f'{choice(["Супер", "Чудово", "Блискуче"])}, всі вірні відповіді додано. '
+                                          f'Тепер вводьте не вірні.')
+                return MQ.QUE_ANS
+            return MQ.QUE_ANS_RIGHT
+        if is_stat:
+            quiz = s.get(Quiz, user.data['quiz_mode']['quiz_id'])
+            que = user.data['new_question']
+            question = QuizQuestion(quiz.id, que['question'], que['is_multi'])
+            s.add(question)
+            s.flush()
+
+            for ans in que['right_answers']:
+                answer = QuestionAnswer(question.id, ans, True)
+                s.add(answer)
+            for ans in que['wrong_answers']:
+                answer = QuestionAnswer(question.id, ans, False)
+                s.add(answer)
+            ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                                 text=f'Запитання успішно створено 🎉.',
+                                 reply_markup=InlineKeyboardMarkup(
+                                     [[InlineKeyboardButton('Назад',
+                                                            callback_data=f'{user.id}.question_mode')]]))
+            return MQ.BACK_TO
+        else:
+            ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                                 text=f'{choice(["Супер", "Чудово", "Блискуче"])}, всі вірні відповіді додано. '
+                                      f'Тепер вводьте не вірні.')
+            return MQ.QUE_ANS
+
+
+def add_question_ans(upd: Update, ctx: CallbackContext):
+    if RE_MED_TEXT.fullmatch(upd.message.text):
+        with db_session.begin() as s:
+            user = s.get(User, upd.effective_user.id)
+            answer_count = len(user.data['new_question']['right_answers']) + len(user.data['new_question']['wrong_answers'])
+
+            if answer_count > MAX_NUMBER - 1:
+                ctx.bot.send_message(
+                    chat_id=upd.effective_chat.id,
+                    text=f'Нажаль, більше 9 відповідей бути не може 😢. Для переходу на наступний етап відправте '
+                         f'/done.')
+                return
+            user.data['new_question']['wrong_answers'].append(upd.message.text)
+            user.flag_data()
+        ctx.bot.send_message(chat_id=upd.effective_chat.id, text=f"{choice(['Супер', 'Чудово', 'Блискуче'])}, "
+                                                                 "не вірну відповідь додано! Вводьте далі, або "
+                                                                 "введіть /done для збереження створеного запитання.")
+    else:
+        ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повідомлення містить недопустимі символи або занадто "
+                                                                 "довге :(")
+    return MQ.ADD_ANS
+
+
+def add_question_done(upd: Update, ctx: CallbackContext):
+    with db_session.begin() as s:
+        user = s.get(User, upd.effective_user.id)
+        que_ref = user.data['new_question']
+        if (len(que_ref['right_answers']) + len(que_ref['wrong_answers'])) < 2:
+            ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                                 text='Правильних і неправильних відповідей повинно бути бодай 2 в сумі, тому ми '
+                                      'повертаємося до введення правильних відповідей. Якщо ви хочете додати '
+                                      'неправильних відповідей - надішліть /done.')
+            return MQ.QUE_ANS_RIGHT
+        quiz = s.get(Quiz, user.data['quiz_mode']['quiz_id'])
+        que = user.data['new_question']
+        question = QuizQuestion(quiz.id, que['question'], que['is_multi'])
+        s.add(question)
+        s.flush()
+
+        for ans in que['right_answers']:
+            answer = QuestionAnswer(question.id, ans, True)
+            s.add(answer)
+        for ans in que['wrong_answers']:
+            answer = QuestionAnswer(question.id, ans, False)
+            s.add(answer)
+        ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                             text=f'Запитання успішно створено 🎉.',
+                             reply_markup=InlineKeyboardMarkup(
+                                 [[InlineKeyboardButton('Назад',
+                                                        callback_data=f'{user.id}.question_mode')]]))
+        return MQ.BACK_TO
+
+
+def add_answer(upd: Update, ctx: CallbackContext):
+    if RE_MED_TEXT.fullmatch(upd.message.text):
+        with db_session.begin() as s:
+            user = s.get(User, upd.effective_user.id)
+            is_stat = s.get(Quiz, user.data['quiz_mode']['quiz_id']).is_statistical
+
+            if s.query(QuestionAnswer).filter_by(question_id=user.data['question_mode']['question_id']).count() < \
+                    MAX_NUMBER:
+                if is_stat:
+                        answer = QuestionAnswer(user.data['question_mode']['question_id'], upd.message.text, True)
+                        s.add(answer)
+                        ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                                             text=f'Відповідь успішно додано 🎉.',
+                                             reply_markup=InlineKeyboardMarkup(
+                                                 [[InlineKeyboardButton('Назад',
+                                                                        callback_data=f'{user.id}.question_edit_mode')]]))
+                else:
+                    user.set_data('new_answer', {
+                        'answer': upd.message.text,
+                        'is_right': True,
+                    })
+                    ctx.bot.send_message(
+                        chat_id=upd.effective_chat.id,
+                        text=f'{choice(["Чудова", "Гарна", "Класна"])} відповідь! Тепер оберіть тип відповіді: ',
+                        reply_markup=InlineKeyboardMarkup(
+                            [[InlineKeyboardButton('Вірна', callback_data='True')],
+                             [InlineKeyboardButton('Не вірна', callback_data='False')]]))
+                    return MQ.ADD_ANS
+            else:
+                ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                                     text=f'Кількість відповідей на це запитання максимальна 😢. Однак ви можете '
+                                          f'видалити наявну відповідь та додати замість неї іншу (або просто '
+                                          f'змінити її).')
+    else:
+        ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повідомлення містить недопустимі символи або занадто "
+                                                                 "довге :(")
+        return MQ.QUESTION_EDIT_MODE
+
+
+def add_answer_type(upd: Update, ctx: CallbackContext):
+    query = upd.callback_query
+    action = eval(query.data)
+    query.answer()
+    with db_session.begin() as s:
+        user = s.get(User, upd.effective_user.id)
+        if s.query(QuestionAnswer).filter_by(question_id=user.data['question_mode']['question_id']).count() <\
+                MAX_NUMBER:
+            answer = QuestionAnswer(user.data['question_mode']['question_id'], user.data['new_answer']['answer'], action)
+            s.add(answer)
+            ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                                 text=f'Відповідь успішно додано 🎉.',
+                                 reply_markup=InlineKeyboardMarkup(
+                                     [[InlineKeyboardButton('Назад',
+                                                            callback_data=f'{user.id}.answer_edit_mode')]]))
+            return MQ.BACK_TO
+        else:
+            ctx.bot.send_message(chat_id=upd.effective_chat.id,
+                                 text=f'Кількість відповідей на це запитання максимальна 😢. Однак ви можете '
+                                      f'видалити наявну відповідь та додати замість неї іншу (або просто '
+                                      f'змінити її).')
 
 
 def question_delete(upd: Update, ctx: CallbackContext):
@@ -572,18 +947,24 @@ def question_delete(upd: Update, ctx: CallbackContext):
         user = s.get(User, upd.effective_user.id)
         query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton('🚪 Повернутися до списку запитань',
-                                 callback_data=f'{user.data["question_mode"]["quiz_id"]}.question_mode')
+                                 callback_data=f'{user.data["quiz_mode"]["quiz_id"]}.question_mode')
         ]]))
     query.answer()
     return MQ.BACK_TO
 
 
-# TODO: fix a bug that it deletes wrong cats
 def cat_delete(upd: Update, ctx: CallbackContext):
     query = upd.callback_query
+    action = query.data
     with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
-        query.edit_message_reply_markup(get_cat_keyboard(user.data['cat_mode']['quiz_id'], query.data))
+        match action:
+            case 'quiz':
+                quiz = s.get(Quiz, user.data['quiz_mode']['quiz_id'])
+                query.edit_message_text(get_quiz_info(quiz),
+                                        reply_markup=get_edit_quiz_keyboard(quiz))
+                return MQ.EDIT
+        query.edit_message_reply_markup(get_cat_keyboard(user.data['quiz_mode']['quiz_id'], action))
     query.answer()
     return MQ.CAT_MODE
 
@@ -611,19 +992,19 @@ def add_cat(upd: Update, ctx: CallbackContext):
     if RE_SHORT_TEXT.fullmatch(cat_name):
         with db_session.begin() as s:
             user = s.get(User, upd.effective_user.id)
-            quiz = s.get(Quiz, user.data['cat_mode']['quiz_id'])
+            quiz = s.get(Quiz, user.data['quiz_mode']['quiz_id'])
             cat = s.query(QuizCategoryType).filter_by(name=cat_name).one_or_none()
 
-            message_id = user.data['cat_mode']['message_id']
-            quiz_id = user.data['cat_mode']['quiz_id']
+            message_id = user.data['quiz_mode']['message_id']
+            quiz_id = user.data['quiz_mode']['quiz_id']
 
             if cat is not None and cat.name in quiz.categories:
                 ctx.bot.send_message(chat_id=upd.effective_chat.id,
                                      text=f'Цю категорію вже додано.')
                 return MQ.CAT_MODE
-            if len(quiz.categories) >= MAX_CATEGORY_NUMBER:
+            if len(quiz.categories) >= MAX_NUMBER:
                 ctx.bot.send_message(chat_id=upd.effective_chat.id,
-                                     text=f'На жаль, не можна додати більше {MAX_CATEGORY_NUMBER} категорій. Ви можете '
+                                     text=f'На жаль, не можна додати більше {MAX_NUMBER} категорій. Ви можете '
                                           f'переглянути додані категорії та видалити їх, натиснувши на кнопку із '
                                           f'відповідною категорією під повідомленням вище.')
                 return MQ.CAT_MODE
@@ -647,17 +1028,6 @@ def add_cat(upd: Update, ctx: CallbackContext):
         ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Повідомлення містить недопустимі символи або занадто "
                                                                  "довге :(")
     return MQ.CAT_MODE
-
-
-# TODO: replace with more specific funcs or just with back_to callback and query.answer refactoring
-def leave_mode(upd: Update, ctx: CallbackContext):
-    with db_session.begin() as s:
-        user = s.get(User, upd.effective_user.id)
-        ctx.bot.send_message(chat_id=upd.effective_chat.id,
-                             text=get_quiz_info(user.data['cat_mode']['quiz_id']),
-                             reply_markup=get_edit_quiz_keyboard(user.data['cat_mode']['quiz_id']))
-        user.remove_data('cat_mode')
-    return MQ.EDIT
 
 
 def back_to(upd: Update, ctx: CallbackContext):
@@ -688,16 +1058,6 @@ def back_to(upd: Update, ctx: CallbackContext):
                                         f'Кількість відповідей: {"кілька" if question.is_multi else "одна"}',  # \nВаріанти відповідей:',
                                         reply_markup=get_question_edit_mode_keyboard(question.id))
                 return MQ.QUESTION_EDIT_MODE
-            case user_id, 'answer_mode':
-                raise NotImplemented
-                # question: QuizQuestion = s.get(QuizQuestion, user.data['question_mode']['question_id'])
-                # is_statistical = s.get(Quiz, question.quiz_id).is_statistical
-                # query.edit_message_text(
-                #     f'Оберіть відповідь для редагування (' + (
-                #         f"повинно бути кілька {'' if is_statistical else 'вірних '}відповідей" if question.is_multi else f"повинна бути лише одна {'' if is_statistical else 'вірна '}відповідь") + '):',
-                #     reply_markup=get_answer_keyboard(question)
-                # )
-                # return MQ.ANSWER_MODE
             case answer_id, 'answer_edit_mode':
                 question: QuizQuestion = s.get(QuizQuestion, user.data['question_mode']['question_id'])
                 is_statistical = s.get(Quiz, question.quiz_id).is_statistical
@@ -719,11 +1079,23 @@ dispatcher.add_handler(ConversationHandler(
             CallbackQueryHandler(quiz_edit),
         ],
         MQ.RENAME: [
-            MessageHandler(Filters.text & ~Filters.command, rename)
+            MessageHandler(Filters.text & ~Filters.command, rename),
+            CallbackQueryHandler(back_to),
         ],
         MQ.QUESTION_MODE: [
             CallbackQueryHandler(question_mode),
-            CommandHandler('leave', leave_mode),  # TODO: unique leave for every case
+            MessageHandler(Filters.text & ~Filters.command, add_question),
+        ],
+        MQ.QUE_IS_MULTI: [
+            CallbackQueryHandler(add_question_is_multi),
+        ],
+        MQ.QUE_ANS_RIGHT: [
+            MessageHandler(Filters.text & ~Filters.command, add_question_right_ans),
+            CommandHandler('done', add_question_right_ans_done),
+        ],
+        MQ.QUE_ANS: [
+            MessageHandler(Filters.text & ~Filters.command, add_question_ans),
+            CommandHandler('done', add_question_done),
         ],
         MQ.QUESTION_EDIT: [
             MessageHandler(Filters.text & ~Filters.command, question_edit),
@@ -732,15 +1104,18 @@ dispatcher.add_handler(ConversationHandler(
         MQ.QUESTION_EDIT_MODE: [
             CallbackQueryHandler(question_edit_mode),
         ],
+        MQ.ADD_ANS: [
+            CallbackQueryHandler(add_answer_type),
+        ],
         MQ.ANSWER_MODE: [
             CallbackQueryHandler(answer_mode),
-            # CallbackQueryHandler(back_to),
         ],
         MQ.ANSWER_EDIT: [
             MessageHandler(Filters.text & ~ Filters.command, answer_edit),
             CallbackQueryHandler(back_to),
         ],
         MQ.ANSWER_EDIT_MODE: [
+            MessageHandler(Filters.text & ~Filters.command, add_answer),
             CallbackQueryHandler(answer_edit_mode),
         ],
         MQ.QUESTION_DELETE: [
@@ -754,7 +1129,6 @@ dispatcher.add_handler(ConversationHandler(
         ],
         MQ.CAT_MODE: [
             MessageHandler(Filters.text & ~Filters.command, add_cat),
-            CommandHandler('leave', leave_mode),
             CallbackQueryHandler(cat_delete),
         ],
         MQ.BACK_TO: [

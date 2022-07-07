@@ -40,10 +40,5 @@ class User(BaseModel):
                            cascade='all, delete, delete-orphan')
     attempts = relationship('Attempt', backref=backref('user', lazy='select'),
                             cascade='all, delete, delete-orphan')
-    owner_of_groups = relationship('Group', foreign_keys='Group.owner_id', cascade='all, delete, delete-orphan')
-    member_of_groups = relationship('Group', viewonly=True,
-                                    secondary='group_member',
-                                    primaryjoin='User.id==GroupMember.user_id',
-                                    secondaryjoin='Group.id==GroupMember.group_id')
     admin = relationship('Admin', backref=backref('user', lazy='select'), uselist=False,
                          cascade='all, delete, delete-orphan')

@@ -4,15 +4,12 @@ import logging
 from sqlalchemy import text
 import db.models.Attempt
 import db.models.AttemptAnswer
-import db.models.Group
-import db.models.GroupMember
 import db.models.QuestionAnswer
 import db.models.Quiz
 import db.models.QuizCategory
 import db.models.QuizCategoryType
 import db.models.QuizQuestion
 import db.models.QuizToken
-import db.models.GroupToken
 from db.models.Session import Session
 import db.models.SessionAnswer
 import db.models.User
@@ -23,7 +20,6 @@ from db.engine import db_engine, db_session, BaseModel
 import src.cmd.new_quiz
 import src.cmd.pass_
 import src.cmd.quiz_management
-import src.cmd.new_group
 
 from bot import updater
 

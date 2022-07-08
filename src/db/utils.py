@@ -108,16 +108,14 @@ DECLARE
 	var_mark numeric;
 	var_row RECORD;
 BEGIN
-	IF NEW.mark = OLD.mark THEN
-	--  Recalculate mark for attempt_answer
-		SELECT get_mark_for_attempt_answer(NEW.id) INTO var_mark;
+--  Recalculate mark for attempt_answer
+	SELECT get_mark_for_attempt_answer(NEW.id) INTO var_mark;
 
-	--  Update attempt answers' mark
-		IF NEW.mark != var_mark THEN
-			UPDATE attempt_answer as aa
-			SET mark = var_mark
-			WHERE id = NEW.id;
-		END IF;
+--  Update attempt answers' mark
+	IF NEW.mark != var_mark THEN
+		UPDATE attempt_answer as aa
+		SET mark = var_mark
+		WHERE id = NEW.id;
 	END IF;
 --  Recalculate mark for attempt
 	SELECT get_mark_for_attempt(NEW.attempt_id) INTO var_mark;
@@ -141,14 +139,17 @@ DECLARE
 	var_right_answer_count integer;
 	var_mark numeric;
 	temp_row RECORD;
-	
+
 	var_question_id bigint;
 BEGIN
-	IF NEW IS NULL THEN
-		var_question_id = OLD.question_id ;
+	IF NEW.question_id IS NULL THEN
+		var_question_id = OLD.question_id;
 	ELSE
 		var_question_id = NEW.question_id;
 	END IF;
+	
+--  Get quiz id
+	SELECT quiz_id INTO var_quiz_id FROM quiz_question qq WHERE qq.id = var_question_id;
 
 	FOR temp_row IN
         SELECT * FROM attempt_answer aa
@@ -159,6 +160,17 @@ BEGIN
 		SET mark = var_mark
 		WHERE aa.id = temp_row.id;
     END LOOP;
+	
+	FOR temp_row IN
+        SELECT * FROM attempt att
+		WHERE att.quiz_id = var_quiz_id
+    LOOP
+		SELECT get_mark_for_attempt(temp_row.id) INTO var_mark;
+		UPDATE attempt att
+		SET mark = var_mark
+		WHERE att.id = temp_row.id;
+    END LOOP;
+	
 	RETURN NEW;
 END $$ LANGUAGE 'plpgsql';
 
@@ -166,7 +178,9 @@ END $$ LANGUAGE 'plpgsql';
 
 CREATE TRIGGER attempt_answer_insert_trigger
 	AFTER INSERT ON attempt_answer
-	FOR EACH ROW EXECUTE FUNCTION update_mark_for_attempt_answer();
+	FOR EACH ROW
+-- 	WHEN (OLD.answer_ids IS DISTINCT FROM NEW.answer_ids)
+	EXECUTE FUNCTION update_mark_for_attempt_answer();
 
 
 
@@ -174,6 +188,7 @@ CREATE TRIGGER attempt_answer_update_trigger
 	AFTER UPDATE ON attempt_answer
 	FOR EACH ROW
 -- 	WHEN (OLD.answer_ids IS DISTINCT FROM NEW.answer_ids)
+	WHEN (OLD.mark IS NOT DISTINCT FROM NEW.mark)
 	EXECUTE FUNCTION update_mark_for_attempt_answer();
 
 
@@ -203,8 +218,7 @@ CREATE TRIGGER question_answer_update_trigger
 CREATE TRIGGER question_answer_delete_trigger
 	AFTER DELETE ON question_answer
 	FOR EACH ROW
-	EXECUTE FUNCTION update_mark_for_related_attempts();
-"""
+	EXECUTE FUNCTION update_mark_for_related_attempts();"""
 
 with db_session.begin() as s:
 	s.execute(text(stmt))

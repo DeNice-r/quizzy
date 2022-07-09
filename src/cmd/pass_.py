@@ -1,4 +1,6 @@
 # Bot
+import telebot.apihelper
+
 from bot import *
 
 # Telegram API
@@ -302,7 +304,21 @@ def cmd_show(upd: Update, ctx: CallbackContext):
     with db_session.begin() as s:
         attempt_id = s.query(Attempt.id).filter_by(uuid=attempt_uuid).scalar()
         if attempt_id is not None:
-            ctx.bot.send_photo(upd.effective_chat.id, get_answer_distribution(attempt_id))
+            attempt = s.get(Attempt, attempt_id)
+            quiz = s.get(Quiz, attempt.quiz_id)
+            tg_user = ctx.bot.get_chat(attempt.user_id)
+            retry_number = s.query(Attempt).filter_by(user_id=attempt.user_id, quiz_id=attempt.quiz_id).count()
+            ctx.bot.send_photo(
+                upd.effective_chat.id,
+                get_answer_distribution(attempt_id),
+                f'Результати тестування:\n'
+                f'Тег користувача: @{tg_user.username if tg_user.username is not None else "-"}\n'
+                f'Повне ім\'я користувача: {tg_user.full_name}\n'
+                f'Назва опитування: {quiz.name}\n'
+                f'Код опитування: {quiz.token}\n'
+                f'Час проходження: {(attempt.finished_on - attempt.started_on)}\n'
+                f'Спроба №: {retry_number}\n'
+                f'Оцінка: {attempt.mark}/100.00\n')
 
 
 def conv_pq_next_question(upd: Update, ctx: CallbackContext):
@@ -347,9 +363,9 @@ def answer_callback(upd: Update, ctx: CallbackContext):
             with db_session.begin() as s:
                 attempt_id = session_to_attempt(user_id)
                 attempt = s.get(Attempt, attempt_id)
-                retry_number = s.query(Attempt).filter_by(user_id=user_id, quiz_id=attempt.quiz_id).count()
                 quiz = s.get(Quiz, attempt.quiz_id)
                 if not quiz.is_statistical:
+                    retry_number = s.query(Attempt).filter_by(user_id=user_id, quiz_id=attempt.quiz_id).count()
                     query.edit_message_text(f'Обрахування результатів тестування...')
                     query.delete_message()
                     ctx.bot.send_photo(

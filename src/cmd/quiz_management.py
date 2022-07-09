@@ -231,8 +231,6 @@ def get_stats_keyboard(period='month', part='day'):
         ],
         [
             InlineKeyboardButton(f'Період: {en_ua_words[period]}', callback_data=f'period.{period}.{part}'),
-        ],
-        [
             InlineKeyboardButton(f'Проміжки: {en_ua_words[part]}', callback_data=f'part.{period}.{part}'),
         ],
         [

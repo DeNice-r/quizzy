@@ -1,8 +1,4 @@
 from db.engine import db_session
-from db.models.Attempt import Attempt
-from db.models.QuizQuestion import QuizQuestion
-from db.models.QuestionAnswer import QuestionAnswer
-from db.models.AttemptAnswer import AttemptAnswer
 from sqlalchemy import text
 
 stmt = \
@@ -67,16 +63,16 @@ BEGIN
 	FROM question_answer qa
 	INNER JOIN attempt_answer aa ON qa.id = ANY(aa.answer_ids)
 	WHERE aa.id = var_attempt_answer_id;
-	
+
 --  Count right answers
 	SELECT COUNT(*) INTO var_right_answer_count
 	FROM tmp_answers
 	WHERE is_right = true;
-	
+
 --  Calculate raw mark (can be nagative)
 	SELECT ROUND((var_right_answer_count * var_weight) - ((COUNT(*) - var_right_answer_count) * var_weight), 2) INTO var_raw_mark
 	FROM tmp_answers;
-	
+
 --  If mark < 0, mark = 0
 	SELECT COALESCE(NULLIF (ABS(var_raw_mark), -var_raw_mark), 0) INTO var_mark;
 
@@ -92,12 +88,12 @@ DECLARE
 BEGIN
 --  Get the mark
 	SELECT get_mark_for_attempt(OLD.attempt_id) INTO var_mark;
-	
+
 --  Update mark of given attempt
 	UPDATE attempt
 	SET mark = var_mark
 	WHERE attempt.id = OLD.attempt_id;
-	
+
 	RETURN OLD;
 END $$ LANGUAGE 'plpgsql';
 
@@ -119,10 +115,10 @@ BEGIN
 	END IF;
 --  Recalculate mark for attempt
 	SELECT get_mark_for_attempt(NEW.attempt_id) INTO var_mark;
-	
+
 	DROP TABLE IF EXISTS temptemp;
 	CREATE TABLE temptemp AS SELECT * FROM get_mark_for_attempt(NEW.attempt_id);
-	
+
 --  Update attempts' mark
 	UPDATE attempt
 	SET mark = var_mark
@@ -147,7 +143,7 @@ BEGIN
 	ELSE
 		var_question_id = NEW.question_id;
 	END IF;
-	
+
 --  Get quiz id
 	SELECT quiz_id INTO var_quiz_id FROM quiz_question qq WHERE qq.id = var_question_id;
 
@@ -160,7 +156,7 @@ BEGIN
 		SET mark = var_mark
 		WHERE aa.id = temp_row.id;
     END LOOP;
-	
+
 	FOR temp_row IN
         SELECT * FROM attempt att
 		WHERE att.quiz_id = var_quiz_id
@@ -170,7 +166,7 @@ BEGIN
 		SET mark = var_mark
 		WHERE att.id = temp_row.id;
     END LOOP;
-	
+
 	RETURN NEW;
 END $$ LANGUAGE 'plpgsql';
 

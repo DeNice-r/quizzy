@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, CallbackContext, ConversationHandler, CallbackQueryHandler
 
 # DB API
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, between
 from db.engine import db_session
 from db.models.Attempt import Attempt
 from db.models.AttemptAnswer import AttemptAnswer
@@ -20,7 +20,14 @@ from db.models.User import User
 # Misc.
 from enum import Enum
 from random import shuffle
+from decimal import Decimal
 
+# MPL
+import matplotlib
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+import matplotlib.pyplot as plt
+import numpy as np
+matplotlib.use('agg')
 
 # Константи діалогу
 class PQ(Enum):
@@ -61,9 +68,15 @@ def get_search_data(user_id, term):
         user = s.get(User, user_id)
         page = user.data['search']['page']
         result_query = s.query(Quiz).filter(
-            and_(Quiz.is_available == True, and_(or_(Quiz.is_public == True, Quiz.name.ilike(f'%{term}%'), Quiz.token == term))))
+            and_(
+                Quiz.is_available == True,
+                or_(
+                    and_(
+                        Quiz.is_public == True,
+                        Quiz.name.ilike(f'%{term}%')),
+                    Quiz.token == term)))
         result_count = result_query.count()
-        result = result_query.offset(user.data['search']['page'] * MAX_NUMBER).limit(MAX_NUMBER - (1 if page == 0 else 0)).all()
+        result = result_query.offset(user.data['search']['page'] * MAX_NUMBER).limit(MAX_NUMBER).all()
         message = f'За запитом "{term}" отримано результатів: {result_count} (натисніть для проходження тесту)'
 
         keyboard = []
@@ -82,6 +95,52 @@ def get_search_data(user_id, term):
                              ])
             markup = InlineKeyboardMarkup(keyboard)
         return message, markup
+
+
+def get_answer_distribution(attempt_id: int):
+    colors = []
+    values = []
+
+    with db_session.begin() as s:
+        right_count = s.query(AttemptAnswer).filter(and_(
+            AttemptAnswer.attempt_id == attempt_id,
+            AttemptAnswer.mark == Decimal('1'))).count()
+        partially_right_count = s.query(AttemptAnswer).filter(and_(
+            AttemptAnswer.attempt_id == attempt_id,
+            and_(AttemptAnswer.mark > Decimal('0'), AttemptAnswer.mark < Decimal('1')))).count()
+        wrong_count = s.query(AttemptAnswer).filter(and_(
+            AttemptAnswer.attempt_id == attempt_id,
+            AttemptAnswer.mark == Decimal('0'))).count()
+
+        if wrong_count != 0:
+            values.append(wrong_count)
+            colors.append('#FF0000')
+        if partially_right_count != 0:
+            values.append(partially_right_count)
+            colors.append('#FF9900')
+        if right_count != 0:
+            values.append(right_count)
+            colors.append('#00FF00')
+
+        data = np.array([values])
+        data_cum = data.cumsum(axis=1)
+
+        fig, ax = plt.subplots(figsize=(50, 3))
+        ax.invert_yaxis()
+        ax.xaxis.set_visible(False)
+        ax.set_xlim(0, np.sum(data, axis=1).max())
+
+        for i, (color) in enumerate(colors):
+            widths = data[:, i]
+            starts = data_cum[:, i] - widths
+            rects = ax.barh([''], widths, left=starts, height=0.5, color=color)
+
+            ax.bar_label(rects, label_type='center', color='black', fontsize=100)
+
+        out = io.BytesIO()
+        FigureCanvas(fig).print_png(out)
+        out.seek(0)
+        return out
 
 
 def update_question(send_message, user_id: int, action: str):
@@ -237,6 +296,15 @@ def cmd_search(upd: Update, ctx: CallbackContext):
     return ConversationHandler.END if markup is None else PQ.CHOOSE
 
 
+def cmd_show(upd: Update, ctx: CallbackContext):
+    attempt_uuid = upd.message.text.split()[1]
+
+    with db_session.begin() as s:
+        attempt_id = s.query(Attempt.id).filter_by(uuid=attempt_uuid).scalar()
+        if attempt_id is not None:
+            ctx.bot.send_photo(upd.effective_chat.id, get_answer_distribution(attempt_id))
+
+
 def conv_pq_next_question(upd: Update, ctx: CallbackContext):
     query = upd.callback_query
     action = eval(query.data)
@@ -283,15 +351,19 @@ def answer_callback(upd: Update, ctx: CallbackContext):
                 quiz = s.get(Quiz, attempt.quiz_id)
                 if not quiz.is_statistical:
                     query.edit_message_text(f'Обрахування результатів тестування...')
-                    query.edit_message_text(f'Результати тестування:\n'
-                                            f'Унікальний код: {attempt.uuid}\n'
-                                            f'Назва: {quiz.name}\n'
-                                            f'Код опитування: {quiz.token}\n'
-                                            f'Час проходження: {(attempt.finished_on - attempt.started_on)}\n'
-                                            f'Спроба №: {retry_number}\n'
-                                            f'Оцінка: {attempt.mark}/100\n'
-                                            f'Переглянути цю спробу можна надіславши боту команду:\n'
-                                            f'/show {attempt.uuid}')
+                    query.delete_message()
+                    ctx.bot.send_photo(
+                        upd.effective_chat.id,
+                        get_answer_distribution(attempt_id),
+                        f'Результати тестування:\n'
+                        f'Унікальний код: {attempt.uuid}\n'
+                        f'Назва: {quiz.name}\n'
+                        f'Код опитування: {quiz.token}\n'
+                        f'Час проходження: {(attempt.finished_on - attempt.started_on)}\n'
+                        f'Спроба №: {retry_number}\n'
+                        f'Оцінка: {attempt.mark}/100\n'
+                        f'Переглянути цю спробу можна надіславши боту команду:\n'
+                        f'/show {attempt.uuid}')
                 else:
                     query.edit_message_text('Опитування пройдено, ваші відповіді успішно записано. Дякуємо за участь!')
             return ConversationHandler.END
@@ -342,6 +414,9 @@ def conv_pq_cancel(upd: Update, ctx: CallbackContext):
         user.remove_data('pass_quiz')
     ctx.bot.send_message(chat_id=upd.effective_chat.id, text='Проходження опитування відмінено 😒')
     return ConversationHandler.END
+
+
+dispatcher.add_handler(CommandHandler('show', cmd_show))
 
 
 dispatcher.add_handler(ConversationHandler(

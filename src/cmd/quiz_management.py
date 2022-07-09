@@ -39,6 +39,18 @@ class MQ(Enum):
         BACK_TO = range(19)
 
 
+time_parts = ['day', 'month', 'year', 'all']
+time_parts_day_eq = {'day': 1, 'month': 30, 'year': 365}
+time_part_indexes = {'day': 0, 'month': 1, 'year': 2, 'all': 3}
+
+en_ua_words = {
+    'day': 'день',
+    'month': 'місяць',
+    'year': 'рік',
+    'all': 'весь час'
+}
+
+
 def get_all_quizzes_keyboard(user_id: int):
     with db_session.begin() as s:
         user = s.get(User, user_id)
@@ -209,19 +221,23 @@ def get_exact_answer_keyboard(answer: QuestionAnswer | int):
         return InlineKeyboardMarkup(keyboard)
 
 
-def get_stats_keyboard():
+def get_stats_keyboard(period='month', part='day'):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton('Статистика відповідей', 'answers'),
+            InlineKeyboardButton('По відповідям', callback_data=f'answers.{period}.{part}'),
         ],
         [
-            InlineKeyboardButton('Статистика відповідей'),
+            InlineKeyboardButton('По кількості проходжень', callback_data=f'attempts.{period}.{part}'),
         ],
         [
-            InlineKeyboardButton('🚪 Назад'),
-            # send_statistics(upd, ctx, quiz_id)
+            InlineKeyboardButton(f'Період: {en_ua_words[period]}', callback_data=f'period.{period}.{part}'),
         ],
-
+        [
+            InlineKeyboardButton(f'Проміжки: {en_ua_words[part]}', callback_data=f'part.{period}.{part}'),
+        ],
+        [
+            InlineKeyboardButton('🚪 Назад', callback_data='quiz..'),
+        ],
     ])
 
 
@@ -242,7 +258,7 @@ def get_quiz_info(quiz: Quiz | int):
         # TODO: to be continued...
 
 
-def send_statistics(upd, ctx, quiz_id):
+def send_question_stats(upd, ctx, quiz_id, period, part):
     images = []
     with db_session.begin() as s:
         titles = [x[0] for x in s.query(QuizQuestion.question).filter_by(quiz_id=quiz_id).all()]
@@ -256,11 +272,13 @@ def send_statistics(upd, ctx, quiz_id):
             stmt = text(
                 "SELECT question_answer.answer, COUNT(question_answer.id) \n"
                 "FROM question_answer \n"
-                "INNER JOIN attempt_answer aa on question_answer.id=ANY(aa.answer_ids) \n"
-                "WHERE question_answer.id = ANY(:ans_ids) \n"
-                "GROUP BY question_answer.id \n")
+                "INNER JOIN attempt_answer aa ON question_answer.id=ANY(aa.answer_ids) \n"
+                "INNER JOIN attempt att ON att.id = aa.attempt_id \n" +
+                (f"AND DATE_PART('day', DATE_TRUNC(:period, NOW()) - DATE_TRUNC(:period, att.started_on)) <= {time_parts_day_eq[period]} \n" if period != 'all' else "") +
+                "WHERE question_answer.id = ANY(:ans_ids)\n"
+                "GROUP BY question_answer.id;")
 
-            counts = s.execute(stmt, {'ans_ids': answer_ids}).all()
+            counts = s.execute(stmt, {'ans_ids': answer_ids, 'period': period}).all()
             if len(counts) < 1:
                 continue
 
@@ -270,7 +288,7 @@ def send_statistics(upd, ctx, quiz_id):
 
             fig, ax = plt.subplots()
             ax.pie([x[1] for x in counts],
-                   labels=[(x[0] if len(x[0]) < 30 else x[0][:27] + '...') for x in counts],
+                   labels=[(x[0] if len(x[0]) < 40 else x[0][:37] + '...') for x in counts],
                    radius=5,
                    center=(10, 10),
                    autopct='%1.1f%%',
@@ -292,6 +310,32 @@ def send_statistics(upd, ctx, quiz_id):
             images = images[10:]
     if len(images) == 1:
         ctx.bot.send_photo(upd.effective_chat.id, images[0].media)
+
+
+def send_attempt_count_stats(upd, ctx, quiz_id, period, part):
+    with db_session.begin() as s:
+        # TODO: all time stat
+        stats = s.execute(text(
+            f"""SELECT DATE_TRUNC(:part, att.started_on), COUNT(*) as "Number of attempts"
+                FROM attempt att
+                WHERE :quiz_id = att.quiz_id """ +
+            (f"AND DATE_PART('day', DATE_TRUNC(:period, NOW()) - DATE_TRUNC(:period, att.started_on)) <= {time_parts_day_eq[period]}" if period != 'all' else "") +
+            """ GROUP BY DATE_TRUNC(:part, att.started_on)
+                ORDER BY DATE_TRUNC(:part, att.started_on);
+            """), {'quiz_id': quiz_id, 'part': part, 'period': period}).all()
+
+        fig, ax = plt.subplots()
+
+        ax.plot(
+            [x[0].strftime('%d.%m\n%Y') for x in stats], [x[1] for x in stats])
+
+        ax.set(ylabel='Кількість проходжень')
+
+        photo = io.BytesIO()
+        FigureCanvas(fig).print_png(photo)
+        photo.seek(0)
+
+        ctx.bot.send_photo(upd.effective_chat.id, photo)
 
 
 def cmd_my_quizzes(upd: Update, ctx: CallbackContext):
@@ -399,11 +443,8 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
             query.edit_message_text(get_quiz_info(quiz_id), reply_markup=get_edit_quiz_keyboard(quiz_id))
             return MQ.EDIT
         case quiz_id, 'show_stats':
-            raise NotImplemented
             query.edit_message_text('Оберіть тип статистики, яку хочете переглянути:',
-                                    reply_markup=get_stats_keyboard(quiz_id))
-            send_statistics(upd, ctx, quiz_id)
-
+                                    reply_markup=get_stats_keyboard())
             return MQ.STATS
         case quiz_id, 'question_mode':
             with db_session.begin() as s:
@@ -427,6 +468,41 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
             query.edit_message_text('Оберіть опитування:',
                                     reply_markup=get_all_quizzes_keyboard(upd.effective_user.id))
             return MQ.SHOW
+
+
+def stats_mode(upd: Update, ctx: CallbackContext):
+    query = upd.callback_query
+    action, period, part = query.data.split('.')
+    query.answer()
+
+    with db_session.begin() as s:
+        user = s.get(User, upd.effective_user.id)
+        quiz_id = user.data['quiz_mode']['quiz_id']
+        match action:
+            case 'answers':
+                send_question_stats(upd, ctx, quiz_id, period, part)
+            case 'attempts':
+                send_attempt_count_stats(upd, ctx, quiz_id, period, part)
+            case 'period':
+                new_period_idx = (time_part_indexes[period] + 1) % len(time_parts)
+                new_part = part
+                if new_period_idx == 0:
+                    new_period_idx = 1
+                    new_part = time_parts[0]
+
+                query.edit_message_reply_markup(
+                    get_stats_keyboard(time_parts[new_period_idx], new_part))
+            case 'part':
+                new_part_idx = (time_part_indexes[part] + 1) % len(time_parts)
+                if new_part_idx >= time_part_indexes[period]:
+                    new_part_idx = 0
+                query.edit_message_reply_markup(
+                    get_stats_keyboard(period, time_parts[new_part_idx]))
+            case 'quiz':
+                quiz = s.get(Quiz, quiz_id)
+                query.edit_message_text(get_quiz_info(quiz),
+                                        reply_markup=get_edit_quiz_keyboard(quiz))
+                return MQ.EDIT
 
 
 def rename(upd: Update, ctx: CallbackContext):
@@ -566,7 +642,6 @@ def question_edit(upd: Update, ctx: CallbackContext):
 def answer_mode(upd: Update, ctx: CallbackContext):
     query = upd.callback_query
     action_split = query.data.split('.')
-    # action_split[0] = int(action_split[0])  # TODO: is it really needed? *** (remove everywhere if it is not)
     query.answer()
     with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
@@ -1072,6 +1147,9 @@ dispatcher.add_handler(ConversationHandler(
         ],
         MQ.EDIT: [
             CallbackQueryHandler(quiz_edit),
+        ],
+        MQ.STATS: [
+            CallbackQueryHandler(stats_mode),
         ],
         MQ.RENAME: [
             MessageHandler(Filters.text & ~Filters.command, rename),

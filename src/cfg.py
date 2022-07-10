@@ -18,6 +18,8 @@ logging.basicConfig(format='[%(asctime)s]=>%(levelname)s] %(name)s: %(message)s'
 # consts
 BOT_NAME = os.environ['BOT_NAME']
 
+TELEGRAPH_TOKEN = os.environ['TELEGRAPH_TOKEN']
+
 GOOD_SIGN = '♥'  # os.environ['GOOD_SIGN']
 BAD_SIGN = '🖤'  # os.environ['BAD_SIGN']
 

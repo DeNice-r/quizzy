@@ -104,6 +104,7 @@ def get_answer_distribution(attempt_id: int):
     values = []
 
     with db_session.begin() as s:
+        attempt = s.get(Attempt, attempt_id)
         right_count = s.query(AttemptAnswer).filter(and_(
             AttemptAnswer.attempt_id == attempt_id,
             AttemptAnswer.mark == Decimal('1'))).count()
@@ -113,14 +114,19 @@ def get_answer_distribution(attempt_id: int):
         wrong_count = s.query(AttemptAnswer).filter(and_(
             AttemptAnswer.attempt_id == attempt_id,
             AttemptAnswer.mark == Decimal('0'))).count()
+        unanswered_count = s.query(QuizQuestion).filter_by(quiz_id=attempt.quiz_id).count() - \
+                           (right_count + wrong_count + partially_right_count)
 
-        if wrong_count != 0:
+        if right_count > 0:
+            values.append(unanswered_count)
+            colors.append('#AAAAAA')
+        if wrong_count > 0:
             values.append(wrong_count)
             colors.append('#FF0000')
-        if partially_right_count != 0:
+        if partially_right_count > 0:
             values.append(partially_right_count)
             colors.append('#FF9900')
-        if right_count != 0:
+        if right_count > 0:
             values.append(right_count)
             colors.append('#00FF00')
 
@@ -318,7 +324,34 @@ def cmd_show(upd: Update, ctx: CallbackContext):
                 f'Код опитування: {quiz.token}\n'
                 f'Час проходження: {(attempt.finished_on - attempt.started_on)}\n'
                 f'Спроба №: {retry_number}\n'
-                f'Оцінка: {attempt.mark}/100.00\n')
+                f'Оцінка: {attempt.mark}/100.00\n',
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('Проглянути повний звіт', callback_data=f'show_more.{attempt.id}')
+                ]]))
+
+
+def show_more(upd: Update, ctx: CallbackContext):
+    query = upd.callback_query
+    attempt_id = query.data.split('.')[1]
+    query.answer()
+
+    with db_session.begin() as s:
+        attempt = s.get(Attempt, attempt_id)
+        questions = [x[0] for x in s.query(QuizQuestion.question).filter_by(quiz_id=attempt.quiz_id).order_by(QuizQuestion.id).all()]
+        answers = s.execute(text(
+            'SELECT DISTINCT qa.question_id, qa.answer, aa.answer_ids '
+            'FROM question_answer qa '
+            'INNER JOIN quiz_question qq ON qq.id = qa.question_id '
+            'LEFT JOIN attempt_answer aa ON qa.id = ANY(aa.answer_ids) '
+            # 'WHERE qq.quiz_id = :quiz_id '
+            'WHERE aa.attempt_id = :attempt_id '
+            'ORDER BY qa.question_id;'
+        ), {'quiz_id': attempt.quiz_id, 'attempt_id': attempt_id}).all()
+        answers = s.query(QuestionAnswer.answer, QuestionAnswer).\
+            join(AttemptAnswer, AttemptAnswer.question_id==QuestionAnswer.question_id, isouter=True).\
+            filter_by(attempt_id=attempt_id).order_by(AttemptAnswer.question_id)
+        for x in range(len(questions)):
+            pass
 
 
 def conv_pq_next_question(upd: Update, ctx: CallbackContext):
@@ -433,6 +466,7 @@ def conv_pq_cancel(upd: Update, ctx: CallbackContext):
 
 
 dispatcher.add_handler(CommandHandler('show', cmd_show))
+dispatcher.add_handler(CallbackQueryHandler(show_more, pattern=r'^show_more\..+$'))
 
 
 dispatcher.add_handler(ConversationHandler(

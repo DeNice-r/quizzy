@@ -1,4 +1,7 @@
 # Bot
+import json
+import urllib.parse
+
 import telebot.apihelper
 
 from bot import *
@@ -6,6 +9,9 @@ from bot import *
 # Telegram API
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, CallbackContext, ConversationHandler, CallbackQueryHandler
+
+# Telegraph API
+from requests import get
 
 # DB API
 from sqlalchemy import and_, or_, between
@@ -149,6 +155,17 @@ def get_answer_distribution(attempt_id: int):
         FigureCanvas(fig).print_png(out)
         out.seek(0)
         return out
+
+
+def get_answer_stats(tg_user, quiz, attempt, retry_number):
+    return f'Результати тестування:\n'\
+        f'Тег користувача: @{tg_user.username if tg_user.username is not None else "-"}\n'\
+        f'Повне ім\'я користувача: {tg_user.full_name}\n'\
+        f'Назва опитування: {quiz.name}\n'\
+        f'Код опитування: {quiz.token}\n'\
+        f'Час проходження: {(attempt.finished_on - attempt.started_on)}\n'\
+        f'Спроба №: {retry_number}\n'\
+        f'Оцінка: {attempt.mark}/100.00\n'
 
 
 def update_question(send_message, user_id: int, action: str):
@@ -317,14 +334,7 @@ def cmd_show(upd: Update, ctx: CallbackContext):
             ctx.bot.send_photo(
                 upd.effective_chat.id,
                 get_answer_distribution(attempt_id),
-                f'Результати тестування:\n'
-                f'Тег користувача: @{tg_user.username if tg_user.username is not None else "-"}\n'
-                f'Повне ім\'я користувача: {tg_user.full_name}\n'
-                f'Назва опитування: {quiz.name}\n'
-                f'Код опитування: {quiz.token}\n'
-                f'Час проходження: {(attempt.finished_on - attempt.started_on)}\n'
-                f'Спроба №: {retry_number}\n'
-                f'Оцінка: {attempt.mark}/100.00\n',
+                get_answer_stats(tg_user, quiz, attempt, retry_number),
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton('Проглянути повний звіт', callback_data=f'show_more.{attempt.id}')
                 ]]))
@@ -337,21 +347,36 @@ def show_more(upd: Update, ctx: CallbackContext):
 
     with db_session.begin() as s:
         attempt = s.get(Attempt, attempt_id)
-        questions = [x[0] for x in s.query(QuizQuestion.question).filter_by(quiz_id=attempt.quiz_id).order_by(QuizQuestion.id).all()]
+        questions = s.query(QuizQuestion.question).filter_by(quiz_id=attempt.quiz_id).order_by(QuizQuestion.id).all()
         answers = s.execute(text(
-            'SELECT DISTINCT qa.question_id, qa.answer, aa.answer_ids '
+            'SELECT qa.question_id, aa.answer_ids IS NOT NULL, aa.mark, qa.answer '
             'FROM question_answer qa '
             'INNER JOIN quiz_question qq ON qq.id = qa.question_id '
-            'LEFT JOIN attempt_answer aa ON qa.id = ANY(aa.answer_ids) '
-            # 'WHERE qq.quiz_id = :quiz_id '
-            'WHERE aa.attempt_id = :attempt_id '
-            'ORDER BY qa.question_id;'
+            'LEFT JOIN attempt_answer aa ON qa.id = ANY(aa.answer_ids) AND aa.attempt_id = :attempt_id '
+            'WHERE qq.quiz_id = :quiz_id '
+            'ORDER BY qa.question_id, aa.mark'
         ), {'quiz_id': attempt.quiz_id, 'attempt_id': attempt_id}).all()
-        answers = s.query(QuestionAnswer.answer, QuestionAnswer).\
-            join(AttemptAnswer, AttemptAnswer.question_id==QuestionAnswer.question_id, isouter=True).\
-            filter_by(attempt_id=attempt_id).order_by(AttemptAnswer.question_id)
-        for x in range(len(questions)):
-            pass
+
+        quiz = s.get(Quiz, attempt.quiz_id)
+        tg_user = ctx.bot.get_chat(attempt.user_id)
+        retry_number = s.query(Attempt).filter_by(user_id=attempt.user_id, quiz_id=attempt.quiz_id).count()
+        analysis = get_answer_stats(tg_user, quiz, attempt, retry_number)
+        analysis += f'\n\n\nПо запитанням:\n[{answers[0].mark}/1.00] {questions[0][0]}\n'
+        last_question_id = answers[0][0]
+        question_number = 1
+
+        for x in range(len(answers)):
+            if last_question_id != answers[x][0]:
+                analysis += '\n\n[' + (str(answers[x][2]) if answers[x][2] is not None else '0.00') + '/1.00] ' + questions[question_number][0] + '\n'
+                last_question_id = answers[x][0]
+            analysis += f'{GOOD_SIGN if answers[x][1] else BAD_SIGN} {answers[x][3]}\n'
+#analysis.replace(" ", "+")
+        if attempt.report_path is None:
+            page = get(f'https://api.telegra.ph/createPage?access_token={TELEGRAPH_TOKEN}&title=Report+%23{attempt.id}&author_name=Quizzy+attempt+report&content=[{{"tag":"p","children":["{urllib.parse.quote_plus(analysis)}"]}}]').json()
+            attempt.report_path = page['result']['path']
+        else:
+            page = get(f'https://api.telegra.ph/editPage/{attempt.report_path}?access_token={TELEGRAPH_TOKEN}&title=Report+%23{attempt.id}&author_name=Quizzy+attempt+report&content=[{{"tag":"p","children":["{urllib.parse.quote_plus(analysis)}"]}}]').json()
+        ctx.bot.send_message(upd.effective_chat.id, f"Звіт успішно сформовано. Його можна проглянути за посиланням:\n{page['result']['url']}")
 
 
 def conv_pq_next_question(upd: Update, ctx: CallbackContext):

@@ -1,5 +1,7 @@
 import io
 import random
+import subprocess
+import sys
 
 from cfg import *
 from db.models.User import User
@@ -11,7 +13,14 @@ from telegram.ext import CommandHandler, CallbackContext
 # DB API
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from db.engine import db_session
+from db.engine import db_session, db_engine, create_engine
+from db.models.Admin import Admin
+
+# System API for backup
+import datetime
+from subprocess import Popen
+
+from utils import generate_token
 
 
 def cmd_start(upd: Update, ctx: CallbackContext):
@@ -30,9 +39,6 @@ def cmd_start(upd: Update, ctx: CallbackContext):
     ctx.bot.send_message(chat_id=upd.effective_chat.id, text=msg)
 
 
-# System API for backup
-# import datetime
-# from subprocess import Popen
 # def cmd_backup(upd: Update, ctx: CallbackContext):
 #     # Maybe try to copy instead of archiving?
 #     if upd.effective_user.id != 408526329:
@@ -74,10 +80,48 @@ def cmd_start(upd: Update, ctx: CallbackContext):
 #                                       f'Часу знадобилося на копіювання: {dt_end - dt_start}\n',
 #                                       message_data.chat_id,
 #                                       message_data.message_id)
-# dispatcher.add_handler(CommandHandler('backup', cmd_backup))
 
 
-# Розпочати роботу з ботом
+def cmd_backup(upd: Update, ctx: CallbackContext):
+    with db_session.begin() as s:
+        if s.get(Admin, upd.effective_user.id) is None:
+            return
+    message_data = ctx.bot.send_message(upd.effective_chat.id, 'Резервне копіювання...')
+    dt_start = datetime.datetime.now()
+    backup_folder = BACKUP_FOLDER
+    backup_dt = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
+    backup_path = backup_folder + f'/{backup_dt}_{generate_token(3)}_backup.sql'
+    process = Popen(f'pg_dump.exe --file {backup_path} --host localhost --port 5432 '
+                    f'--quote-all-identifiers --format=p --create --clean --section=pre-data '
+                    f'--section=data --section=post-data quizzy'.split(' '), stdout=subprocess.PIPE)
+    process.wait()
+    dt_end = datetime.datetime.now()
+    ctx.bot.edit_message_text('Резервне копіювання успішно завершено!\n'
+                              f'Шлях до копії: {backup_path}\n'
+                              f'Часу знадобилося на копіювання: {dt_end - dt_start}\n',
+                              message_data.chat_id,
+                              message_data.message_id)
 
 
+def cmd_restore(upd: Update, ctx: CallbackContext):
+    with db_session.begin() as s:
+        if s.get(Admin, upd.effective_user.id) is None:
+            return
+    message_data = ctx.bot.send_message(upd.effective_chat.id, 'Відновлення...')
+    global db_engine
+    db_engine.dispose()
+    dt_start = datetime.datetime.now()
+    backup_path = upd.message.text.split(' ')[1]
+    process = Popen(f'psql -f {backup_path}'.split(' '), stdout=subprocess.PIPE)
+    process.communicate()
+    db_engine = create_engine()
+    dt_end = datetime.datetime.now()
+    ctx.bot.edit_message_text('Резервне копіювання успішно завершено!\n'
+                              f'Часу знадобилося на відновлення: {dt_end - dt_start}\n',
+                              message_data.chat_id,
+                              message_data.message_id)
+
+
+dispatcher.add_handler(CommandHandler('backup', cmd_backup))
+dispatcher.add_handler(CommandHandler('restore', cmd_restore))
 dispatcher.add_handler(CommandHandler('start', cmd_start))

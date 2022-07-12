@@ -20,7 +20,9 @@ BOT_NAME = os.environ['BOT_NAME']
 
 TELEGRAPH_TOKEN = os.environ['TELEGRAPH_TOKEN']
 
-GOOD_SIGN = '♥'  # os.environ['GOOD_SIGN']
+BACKUP_FOLDER = os.environ['BACKUP_FOLDER']
+
+GOOD_SIGN = '💗'  # os.environ['GOOD_SIGN']
 BAD_SIGN = '🖤'  # os.environ['BAD_SIGN']
 
 MAX_NUMBER = 9

@@ -40,5 +40,3 @@ class User(BaseModel):
                            cascade='all, delete, delete-orphan')
     attempts = relationship('Attempt', backref=backref('user', lazy='select'),
                             cascade='all, delete, delete-orphan')
-    admin = relationship('Admin', backref=backref('user', lazy='select'), uselist=False,
-                         cascade='all, delete, delete-orphan')

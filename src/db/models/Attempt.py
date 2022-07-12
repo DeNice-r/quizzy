@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Column, BigInteger, ForeignKey, Integer, DateTime, Numeric
+from sqlalchemy import Column, BigInteger, ForeignKey, Integer, DateTime, Numeric, String
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -30,6 +30,7 @@ class Attempt(BaseModel):
     quiz_id = Column(Integer, ForeignKey(Quiz.id, ondelete='CASCADE'), nullable=False)
     started_on = Column(DateTime, nullable=False)
     finished_on = Column(DateTime, default=datetime.datetime.now, nullable=False)
+    report_path = Column(String, nullable=True)
     answers = relationship('AttemptAnswer', backref=backref('attempt', lazy='select'),
                            cascade='all, delete, delete-orphan')
     mark = Column(Numeric, nullable=True, default=0, server_default='0')

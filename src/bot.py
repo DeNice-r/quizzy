@@ -8,7 +8,7 @@ from db.models.User import User
 
 # Telegram API
 from telegram import Update, InputMediaPhoto
-from telegram.ext import CommandHandler, CallbackContext
+from telegram.ext import CommandHandler, CallbackContext, ConversationHandler, MessageHandler, Filters
 
 # DB API
 from sqlalchemy import text
@@ -19,8 +19,10 @@ from db.models.Admin import Admin
 # System API for backup
 import datetime
 from subprocess import Popen
+import shutil
 
 from utils import generate_token
+from enum import Enum
 
 
 def cmd_start(upd: Update, ctx: CallbackContext):
@@ -39,49 +41,6 @@ def cmd_start(upd: Update, ctx: CallbackContext):
     ctx.bot.send_message(chat_id=upd.effective_chat.id, text=msg)
 
 
-# def cmd_backup(upd: Update, ctx: CallbackContext):
-#     # Maybe try to copy instead of archiving?
-#     if upd.effective_user.id != 408526329:
-#         return
-#     backup_folder = "D:/PostgreSQL/BaseBackup"
-#     backup_dt = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
-#     current_backup_path = backup_folder + f'/{backup_dt}_backup'
-#
-#     # p = Popen(["D:\\PostgreSQL\\14\\bin\pg_basebackup.exe", "-U", "postgres", "-D", backup_folder, "-Ft", "-R"],
-#     #           stdout=sys.stdout, stdin=sys.stdin)
-#     # p.communicate()
-#
-#     message_data = ctx.bot.send_message(upd.effective_chat.id, 'Резервне копіювання...')
-#     dt_start = datetime.datetime.now()
-#
-#     with db_session.begin() as s:
-#         s.execute(text("""SELECT pg_start_backup('label', false, false);"""))
-#
-#     p = Popen(["7z", "a", "-t7z", "-mx=9",
-#                current_backup_path, 'D:/PostgreSQL/14/data/', '-xr!data/pg_wal/0*', '-x!data/postmaster*',
-#                '-xr!data/pg_wal/archive_status/*', '-xr!data/pg_replslot/*', '-xr!data/pg_dynshmem/*',
-#                '-xr!data/pg_notify/*', '-xr!data/pg_serial/*', '-xr!data/pg_snapshots/*', '-xr!data/pg_stat_tmp/*',
-#                '-xr!data/pg_subtrans/*', '-xr!pgsql_tmp*', '-xr!pg_internal.init'])
-#     p.communicate()
-#     with db_session.begin() as s:
-#         res = s.execute(text("""SELECT * FROM pg_stop_backup(false, false);"""))
-#         s.execute(text("""SELECT pg_switch_wal();"""))
-#         for r in res:
-#             with open(f"{backup_folder}/{backup_dt}_backup_label", mode='w') as f:
-#                 f.write(r[1])
-#             if r[2] != '':
-#                 with open(f"{backup_folder}/{backup_dt}_tablespace_map", mode='w') as f:
-#                     f.write(r[2])
-#
-#             dt_end = datetime.datetime.now()
-#             # print('RESULT:', r)
-#             ctx.bot.edit_message_text('Резервне копіювання успішно завершено!\n'
-#                                       f'Шлях до копії: {current_backup_path}.7z\n'
-#                                       f'Часу знадобилося на копіювання: {dt_end - dt_start}\n',
-#                                       message_data.chat_id,
-#                                       message_data.message_id)
-
-
 def cmd_backup(upd: Update, ctx: CallbackContext):
     with db_session.begin() as s:
         if s.get(Admin, upd.effective_user.id) is None:
@@ -93,11 +52,32 @@ def cmd_backup(upd: Update, ctx: CallbackContext):
     backup_path = backup_folder + f'/{backup_dt}_{generate_token(3)}_backup.sql'
     process = Popen(f'pg_dump.exe --file {backup_path} --host localhost --port 5432 '
                     f'--quote-all-identifiers --format=p --create --clean --section=pre-data '
-                    f'--section=data --section=post-data quizzy'.split(' '), stdout=subprocess.PIPE)
+                    f'--section=data --section=post-data {os.environ["DATABASE_URL"].split("/")[-1]}'.split(' '), stdout=subprocess.PIPE)
     process.wait()
     dt_end = datetime.datetime.now()
     ctx.bot.edit_message_text('Резервне копіювання успішно завершено!\n'
                               f'Шлях до копії: {backup_path}\n'
+                              f'Часу знадобилося на копіювання: {dt_end - dt_start}\n',
+                              message_data.chat_id,
+                              message_data.message_id)
+
+
+def cmd_base_backup(upd: Update, ctx: CallbackContext):
+    with db_session.begin() as s:
+        if s.get(Admin, upd.effective_user.id) is None:
+            return
+    message_data = ctx.bot.send_message(upd.effective_chat.id, 'Резервне копіювання...')
+    dt_start = datetime.datetime.now()
+    backup_folder = BACKUP_FOLDER + '/BaseBackup'
+    try:
+        shutil.rmtree(backup_folder)
+    except:
+        pass
+    process = Popen(f'pg_basebackup.exe -X stream -D {backup_folder}'.split(' '), stdout=subprocess.PIPE)
+    process.wait()
+    dt_end = datetime.datetime.now()
+    ctx.bot.edit_message_text('Резервне копіювання успішно завершено!\n'
+                              f'Шлях до копії: {backup_folder}\n'
                               f'Часу знадобилося на копіювання: {dt_end - dt_start}\n',
                               message_data.chat_id,
                               message_data.message_id)
@@ -122,6 +102,64 @@ def cmd_restore(upd: Update, ctx: CallbackContext):
                               message_data.message_id)
 
 
+def cmd_add_admin(upd: Update, ctx: CallbackContext):
+    with db_session.begin() as s:
+        if s.get(Admin, upd.effective_user.id) is None:
+            return
+        user_id = upd.message.text.split(' ')[1]
+        try:
+            if s.get(User, user_id) is not None:
+                admin = Admin(user_id)
+                s.add(admin)
+            else:
+                ctx.bot.send_message(upd.effective_chat.id, 'Цей користувач не авторизувався у боті.')
+        except:
+            ctx.bot.send_message(upd.effective_chat.id, 'Цей користувач вже є адміністратором.')
+            return
+    ctx.bot.send_message(upd.effective_chat.id, 'Адміністратора успішно додано!')
+
+
+def cmd_remove_admin(upd: Update, ctx: CallbackContext):
+    with db_session.begin() as s:
+        if s.get(Admin, upd.effective_user.id) is None:
+            return
+        user_id = upd.message.text.split(' ')[1]
+        try:
+            admin = s.get(Admin, user_id)
+            if admin is not None:
+                s.remove(admin)
+            else:
+                ctx.bot.send_message(upd.effective_chat.id, 'Цей користувач не є адміністратором.')
+        except:
+            ctx.bot.send_message(upd.effective_chat.id, 'Цей користувач не є адміністратором.')
+            return
+    ctx.bot.send_message(upd.effective_chat.id, 'Адміністратора успішно видалено!')
+
+
+def cmd_get_user_id(upd: Update, ctx: CallbackContext):
+    with db_session.begin() as s:
+        if s.get(Admin, upd.effective_user.id) is None:
+            return
+    ctx.bot.send_message(upd.effective_chat.id, 'Перешліть сюди повідомлення користувача щоб отримати його ID. Щоб '
+                                                'відмінити цю операцію - надішліть /cancel')
+    return 0
+
+
+def get_user_id(upd: Update, ctx: CallbackContext):
+    ctx.bot.send_message(upd.effective_chat.id, f'ID користувача: {upd.message.forward_from.id}')
+    return ConversationHandler.END
+
+
+dispatcher.add_handler(ConversationHandler(
+    entry_points=[CommandHandler('get_user_id', cmd_get_user_id)],
+    states={
+        0: [MessageHandler(Filters.text & ~Filters.command, get_user_id)]
+    },
+    fallbacks=[CommandHandler('cancel', lambda *args: ConversationHandler.END)]
+))
+dispatcher.add_handler(CommandHandler('add_admin', cmd_add_admin))
+dispatcher.add_handler(CommandHandler('remove_admin', cmd_remove_admin))
 dispatcher.add_handler(CommandHandler('backup', cmd_backup))
+dispatcher.add_handler(CommandHandler('base_backup', cmd_base_backup))
 dispatcher.add_handler(CommandHandler('restore', cmd_restore))
 dispatcher.add_handler(CommandHandler('start', cmd_start))

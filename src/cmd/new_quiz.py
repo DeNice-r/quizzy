@@ -385,7 +385,7 @@ def conv_nq_success_end(upd: Update, ctx: CallbackContext):
                  f'{"назвою або " if quiz.is_public else ""}цим кодом у пошуку (/search {quiz.token}'
                  f'{" або /search " + quiz.name if quiz.is_public else ""}) або за допомогою команди '
                  f'/pass {quiz.token}. Цей код можна подивитися та змінити у меню опитування.')
-        user.clear_data()
+        user.remove_data('new_quiz')
     return ConversationHandler.END
 
 

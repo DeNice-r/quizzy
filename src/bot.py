@@ -49,10 +49,11 @@ def cmd_backup(upd: Update, ctx: CallbackContext):
     dt_start = datetime.datetime.now()
     backup_folder = BACKUP_FOLDER
     backup_dt = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
-    backup_path = backup_folder + f'/{backup_dt}_{generate_token(3)}_backup.sql'
+    db_name = os.environ["DATABASE_URL"].split("/")[-1]
+    backup_path = backup_folder + f'/{db_name}_{backup_dt}_{generate_token(3)}_backup.sql'
     process = Popen(f'pg_dump.exe --file {backup_path} --host localhost --port 5432 '
                     f'--quote-all-identifiers --format=p --create --clean --section=pre-data '
-                    f'--section=data --section=post-data {os.environ["DATABASE_URL"].split("/")[-1]}'.split(' '), stdout=subprocess.PIPE)
+                    f'--section=data --section=post-data {db_name}'.split(' '), stdout=subprocess.PIPE)
     process.wait()
     dt_end = datetime.datetime.now()
     ctx.bot.edit_message_text('Резервне копіювання успішно завершено!\n'

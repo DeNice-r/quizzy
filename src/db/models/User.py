@@ -22,11 +22,6 @@ class User(BaseModel):
         del self.data[key]
         flag_modified(self, 'data')
 
-    # May cause bugs therefore should not be used.
-    # def clear_data(self):
-    #     self.data.clear()
-    #     flag_modified(self, 'data')
-
     @property
     def is_admin(self):
         print(self.admin)

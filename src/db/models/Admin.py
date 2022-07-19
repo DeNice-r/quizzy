@@ -10,4 +10,4 @@ class Admin(BaseModel):
     def __init__(self, user_id):
         self.user_id = user_id
 
-    user_id = Column(BigInteger, primary_key=True)
+    user_id = Column(BigInteger, ForeignKey(User.id), primary_key=True)

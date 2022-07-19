@@ -268,7 +268,10 @@ def start_quiz(upd: Update, ctx: CallbackContext, quiz: Quiz):
 
         ctx.bot.send_message(
             chat_id=upd.effective_chat.id,
-            text=f'Опитування "{quiz.name}"',
+            text=f'Опитування "{quiz.name}"\n'
+                 f'Тип: {"опитування" if quiz.is_statistical else "тестування"}\n'
+                 f'Категорії: {", ".join(quiz.categories)}\n'
+                 f'Кількість запитань: {len(quiz.questions)}\n',
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton('✅ Розпочати', callback_data='True'),
                 InlineKeyboardButton('❌ Відміна', callback_data='False'),

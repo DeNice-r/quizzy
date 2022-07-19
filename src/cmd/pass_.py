@@ -123,7 +123,7 @@ def get_answer_distribution(attempt_id: int):
         unanswered_count = s.query(QuizQuestion).filter_by(quiz_id=attempt.quiz_id).count() - \
                            (right_count + wrong_count + partially_right_count)
 
-        if right_count > 0:
+        if unanswered_count > 0:
             values.append(unanswered_count)
             colors.append('#AAAAAA')
         if wrong_count > 0:

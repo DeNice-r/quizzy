@@ -312,7 +312,6 @@ def send_question_stats(upd, ctx, quiz_id, period, part):
 
 def send_attempt_count_stats(upd, ctx, quiz_id, period, part):
     with db_session.begin() as s:
-        # TODO: all time stat
         stats = s.execute(text(
             f"""SELECT DATE_TRUNC(:part, att.started_on), COUNT(*) as "Number of attempts"
                 FROM attempt att

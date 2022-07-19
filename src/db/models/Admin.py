@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, SmallInteger, ForeignKey
+from sqlalchemy import Column, BigInteger, ForeignKey
 
 from db.engine import BaseModel
 from db.models.User import User

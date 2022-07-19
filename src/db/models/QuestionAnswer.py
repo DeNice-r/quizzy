@@ -1,5 +1,4 @@
 from sqlalchemy import Column, BigInteger, Integer, ForeignKey, String, Boolean
-from sqlalchemy.orm import relationship
 
 from db.models.QuizQuestion import QuizQuestion
 from db.engine import BaseModel
@@ -21,4 +20,3 @@ class QuestionAnswer(BaseModel):
     question_id = Column(Integer, ForeignKey(QuizQuestion.id, ondelete='CASCADE'), nullable=False)
     answer = Column(String(256), nullable=False)
     is_right = Column(Boolean, default=False, nullable=False)
-    # attempts = relationship("AttemptAnswer")

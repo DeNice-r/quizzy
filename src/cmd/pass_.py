@@ -485,7 +485,10 @@ def choose_callback(upd: Update, ctx: CallbackContext):
 
 
 def conv_pq_cancel(upd: Update, ctx: CallbackContext):
-    session_to_attempt(upd.effective_user.id)
+    try:
+        session_to_attempt(upd.effective_user.id)
+    except:
+        pass
     with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
         user.remove_data('pass_quiz')

@@ -23,7 +23,7 @@ class AttemptAnswer(BaseModel):
 
     @classmethod
     def from_session_answer(cls, attempt_id: int, session_answer: SessionAnswer):
-        return cls(attempt_id, session_answer.question_id, tuple(session_answer.answer_ids))  # !!!!!!!!!!
+        return cls(attempt_id, session_answer.question_id, tuple(session_answer.answer_ids))
 
     id = Column(BigInteger, primary_key=True)
     attempt_id = Column(BigInteger, ForeignKey(Attempt.id, ondelete='CASCADE'), nullable=False)
@@ -31,4 +31,3 @@ class AttemptAnswer(BaseModel):
     answer_ids = Column(ARRAY(BigInteger, as_tuple=ForeignKey(QuestionAnswer.id)), nullable=False)
     UniqueConstraint(attempt_id, question_id, name='unique_attempt_answer')
     mark = Column(Numeric, nullable=True, default=0, server_default='0')
-    # answers = relationship('QuestionAnswer', primaryjoin='QuestionAnswer.id == any(AttemptAnswer.answer_ids)')

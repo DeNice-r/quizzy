@@ -26,10 +26,6 @@ from enum import Enum
 
 
 def cmd_start(upd: Update, ctx: CallbackContext):
-    """
-        Записуємо дані про нового (?) користувача в бд
-        відображуємо йому підказки щодо роботи з ботом,
-    """
     msg = f'Ви успішно авторизувалися у {BOT_NAME}.'
     try:
         with db_session.begin() as s:
@@ -114,6 +110,7 @@ def cmd_add_admin(upd: Update, ctx: CallbackContext):
                 s.add(admin)
             else:
                 ctx.bot.send_message(upd.effective_chat.id, 'Цей користувач не авторизувався у боті.')
+                return
         except:
             ctx.bot.send_message(upd.effective_chat.id, 'Цей користувач вже є адміністратором.')
             return

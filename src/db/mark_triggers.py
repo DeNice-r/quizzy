@@ -116,9 +116,6 @@ BEGIN
 --  Recalculate mark for attempt
 	SELECT get_mark_for_attempt(NEW.attempt_id) INTO var_mark;
 
-	DROP TABLE IF EXISTS temptemp;
-	CREATE TABLE temptemp AS SELECT * FROM get_mark_for_attempt(NEW.attempt_id);
-
 --  Update attempts' mark
 	UPDATE attempt
 	SET mark = var_mark
@@ -135,7 +132,6 @@ DECLARE
 	var_right_answer_count integer;
 	var_mark numeric;
 	temp_row RECORD;
-
 	var_question_id bigint;
 BEGIN
 	IF NEW.question_id IS NULL THEN

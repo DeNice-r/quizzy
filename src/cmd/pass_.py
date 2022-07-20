@@ -491,7 +491,10 @@ def conv_pq_cancel(upd: Update, ctx: CallbackContext):
         pass
     with db_session.begin() as s:
         user = s.get(User, upd.effective_user.id)
-        user.remove_data('pass_quiz')
+        try:
+            user.remove_data('pass_quiz')
+        except:
+            pass
     ctx.bot.send_message(chat_id=upd.effective_chat.id, text='Проходження опитування відмінено 😒')
     return ConversationHandler.END
 

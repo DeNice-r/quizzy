@@ -7,6 +7,7 @@ DROP FUNCTION IF EXISTS update_mark_for_attempt CASCADE;
 DROP FUNCTION IF EXISTS get_mark_for_attempt CASCADE;
 DROP FUNCTION IF EXISTS update_mark_for_related_attempts CASCADE;
 DROP FUNCTION IF EXISTS get_mark_for_attempt_answer CASCADE;
+DROP FUNCTION IF EXISTS update_mark_for_related_attempts_on_question_deleted CASCADE;
 
 
 
@@ -124,7 +125,6 @@ BEGIN
 END $$ LANGUAGE 'plpgsql';
 
 
--- TODO: never executed
 CREATE FUNCTION update_mark_for_related_attempts() RETURNS TRIGGER AS $$
 DECLARE
 	var_quiz_id int;
@@ -164,6 +164,42 @@ BEGIN
     END LOOP;
 
 	RETURN NEW;
+END $$ LANGUAGE 'plpgsql';
+
+
+CREATE FUNCTION update_mark_for_related_attempts_on_question_deleted() RETURNS TRIGGER AS $$
+DECLARE
+	var_quiz_id int;
+	var_weight numeric;
+	var_right_answer_count integer;
+	var_mark numeric;
+	temp_row RECORD;
+	var_question_id bigint;
+BEGIN
+	var_question_id = OLD.id;
+	var_quiz_id = OLD.quiz_id;
+
+	FOR temp_row IN
+        SELECT * FROM attempt_answer aa
+		WHERE aa.question_id = var_question_id
+    LOOP
+		SELECT get_mark_for_attempt_answer(temp_row.id) INTO var_mark;
+		UPDATE attempt_answer aa
+		SET mark = var_mark
+		WHERE aa.id = temp_row.id;
+    END LOOP;
+
+	FOR temp_row IN
+        SELECT * FROM attempt att
+		WHERE att.quiz_id = var_quiz_id
+    LOOP
+		SELECT get_mark_for_attempt(temp_row.id) INTO var_mark;
+		UPDATE attempt att
+		SET mark = var_mark
+		WHERE att.id = temp_row.id;
+    END LOOP;
+
+	RETURN OLD;
 END $$ LANGUAGE 'plpgsql';
 
 
@@ -210,7 +246,14 @@ CREATE TRIGGER question_answer_update_trigger
 CREATE TRIGGER question_answer_delete_trigger
 	AFTER DELETE ON question_answer
 	FOR EACH ROW
-	EXECUTE FUNCTION update_mark_for_related_attempts();"""
+	EXECUTE FUNCTION update_mark_for_related_attempts();
+	
+	
+	
+CREATE TRIGGER question_delete_trigger
+	AFTER DELETE ON quiz_question
+	FOR EACH ROW
+	EXECUTE FUNCTION update_mark_for_related_attempts_on_question_deleted();"""
 
 with db_session.begin() as s:
 	s.execute(text(stmt))

@@ -435,7 +435,7 @@ def quiz_edit(upd: Update, ctx: CallbackContext):
         # quiz.questions[x]) for x in range(len(quiz.questions))])))
         case quiz_id, 'regenerate_token':
             with db_session.begin() as s:
-                quiz = s.query(Quiz).filter_by(quiz_id=quiz_id).one_or_none()
+                quiz = s.get(Quiz, quiz_id)
                 quiz.regenerate_token()
             query.edit_message_text(get_quiz_info(quiz_id), reply_markup=get_edit_quiz_keyboard(quiz_id))
             return MQ.EDIT

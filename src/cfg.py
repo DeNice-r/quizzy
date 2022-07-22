@@ -31,7 +31,7 @@ palette = ['#E50000', '#FF8D00', '#FFEE00', '#008121', '#004CFF', '#760188']
 
 # re's
 # __RAW_RE_SHORT_TEXT = r'[a-zа-яёіїєґ\-_\,\.+=<>()*&^%#@!\?\/\\\[\]0-9\'" ]{1,50}'
-__RAW_RE_SHORT_TEXT = r'.{1,50}'
+__RAW_RE_SHORT_TEXT = r'.{1,100}'
 RE_SHORT_TEXT = re.compile(__RAW_RE_SHORT_TEXT, re.IGNORECASE | re.UNICODE)
 # __RAW_RE_MED_TEXT = r'[a-zа-яА-Яёіїєґ\-_,\.+=<>()*&^%#@!?\/\\\[\]0-9\'" \n]{1,256}'
 __RAW_RE_MED_TEXT = r'.{1,256}'

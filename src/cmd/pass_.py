@@ -372,6 +372,7 @@ def show_more(upd: Update, ctx: CallbackContext):
             if last_question_id != answers[x][0]:
                 analysis += '\n\n[' + (str(answers[x][2]) if answers[x][2] is not None else '0.00') + '/1.00] ' + questions[question_number][0] + '\n'
                 last_question_id = answers[x][0]
+                question_number += 1
             analysis += f'{GOOD_SIGN if answers[x][1] else BAD_SIGN} {answers[x][3]}\n'
 #analysis.replace(" ", "+")
         if attempt.report_path is None:
